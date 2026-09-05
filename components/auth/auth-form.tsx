@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth/client";
+import { Spinner } from "@/components/ui/spinner";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -78,8 +79,9 @@ export function AuthForm({ mode, available }: { mode: "sign-in" | "sign-up"; ava
           <input id="confirm-password" name="confirm-password" type="password" autoComplete="new-password" placeholder="Repita sua senha" minLength={8} maxLength={128} required />
         </>}
         <button className="primary-button" type="submit" disabled={busy || !available}>
+          {busy && <Spinner size="small" label={status === "loading" ? "Autenticando" : "Abrindo sua área"} />}
           {status === "loading" ? "Aguarde…" : status === "success" ? "Tudo certo" : signUp ? "Criar conta" : "Entrar"}
-          <span aria-hidden="true">↗</span>
+          {!busy && <span aria-hidden="true">↗</span>}
         </button>
       </fieldset>
       {message && <p className={status === "error" ? "form-message error" : "form-message success"} role={status === "error" ? "alert" : "status"}>{message}</p>}
