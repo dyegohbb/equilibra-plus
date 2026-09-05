@@ -124,6 +124,18 @@ export async function removeTransaction(userId: string, id: string) {
   });
 }
 
+export async function updateTransaction(userId: string, id: string, input: { description: string; walletId: string; consumptionDate: string; competence: string; type: TransactionKind }) {
+  const db = getDb();
+  const [transaction] = await db.select().from(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, userId), isNull(transactions.deletedAt))).limit(1);
+  if (!transaction) throw new Error("Lançamento não encontrado.");
+  if (transaction.transferId || transaction.type === "CARD_PAYMENT" || transaction.type === "TRANSFER") throw new Error("Movimentações vinculadas não podem ser editadas isoladamente.");
+  const wallet = await ownedWallet(userId, input.walletId);
+  const description = input.description.trim();
+  if (!description || description.length > 120) throw new Error("Descrição inválida.");
+  const amountCents = Math.abs(transaction.amountCents) * (input.type === "EXPENSE" ? -1 : 1);
+  await db.update(transactions).set({ description, walletId: wallet.id, consumptionDate: input.consumptionDate, competence: input.competence, type: input.type, amountCents, updatedAt: now() }).where(and(eq(transactions.id, id), eq(transactions.userId, userId), isNull(transactions.deletedAt)));
+}
+
 export async function payCreditCard(userId: string, cardId: string, input: { sourceWalletId: string; amountCents: number; date: string; competence: string }) {
   const [card, source] = await Promise.all([ownedWallet(userId, cardId), ownedWallet(userId, input.sourceWalletId)]);
   if (card.type !== "CREDIT_CARD" || source.type !== "CASH_ACCOUNT" || card.id === source.id || input.amountCents <= 0) throw new Error("Pagamento de cartão inválido.");
