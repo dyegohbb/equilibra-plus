@@ -38,7 +38,7 @@ test("validação de senhas não envia cadastro", async ({ page }) => {
   await page.getByLabel("Senha", { exact: true }).fill(randomBytes(16).toString("hex"));
   await page.getByLabel("Confirmar senha").fill(randomBytes(16).toString("hex"));
   await page.getByRole("button", { name: "Criar conta" }).click();
-  await expect(page.getByRole("alert")).toContainText("As senhas não coincidem");
+  await expect(page.locator("form").getByRole("alert")).toContainText("As senhas não coincidem");
   expect(submissions).toBe(0);
 });
 
@@ -48,7 +48,7 @@ test("Neon rejeita credenciais inválidas com mensagem amigável", async ({ page
   await page.getByLabel("E-mail", { exact: true }).fill(`invalid-${randomBytes(8).toString("hex")}@example.com`);
   await page.getByLabel("Senha", { exact: true }).fill(randomBytes(24).toString("base64url"));
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Não foi possível entrar com essas credenciais");
+  await expect(page.locator("form").getByRole("alert")).toContainText("Não foi possível entrar com essas credenciais");
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 
@@ -89,7 +89,7 @@ test("cadastro, duplicidade, login, refresh, nova aba e logout reais no DEV", as
   await page.getByLabel("Senha", { exact: true }).fill(password);
   await page.getByLabel("Confirmar senha").fill(password);
   await page.getByRole("button", { name: "Criar conta" }).click();
-  await expect(page.getByRole("alert")).toContainText("Não foi possível criar sua conta");
+  await expect(page.locator("form").getByRole("alert")).toContainText("Não foi possível criar sua conta");
   await page.getByRole("link", { name: "Entrar", exact: true }).click();
   await page.getByLabel("E-mail", { exact: true }).fill(email);
   await page.getByLabel("Senha", { exact: true }).fill(password);
@@ -98,3 +98,4 @@ test("cadastro, duplicidade, login, refresh, nova aba e logout reais no DEV", as
   await page.getByRole("button", { name: "Sair", exact: true }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
 });
+
