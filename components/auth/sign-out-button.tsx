@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
+import { Spinner } from "@/components/ui/spinner";
 
 export function SignOutButton() {
   const [busy, setBusy] = useState(false);
@@ -22,5 +23,5 @@ export function SignOutButton() {
       setBusy(false);
     }
   }
-  return <div className="sign-out"><button className="primary-button" onClick={signOut} disabled={busy}>{busy ? "Saindo…" : "Sair"}<span aria-hidden="true">↗</span></button>{error && <p role="alert" className="form-message error">{error}</p>}</div>;
+  return <div className="sign-out"><button className="primary-button" onClick={signOut} disabled={busy}>{busy && <Spinner size="small" label="Encerrando sessão" />}{busy ? "Saindo…" : "Sair"}{!busy && <span aria-hidden="true">↗</span>}</button>{error && <p role="alert" className="form-message error">{error}</p>}</div>;
 }
