@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { categories, purchases, scheduledEntries, scheduledRules, transactions, wallets } from "@/db/schema";
 import { addMonths, calculateCompetence, calculateInstallmentCompetences, calculateInstallments, type InstallmentMode } from "./domain";
@@ -15,7 +15,7 @@ export async function getFinanceData(userId: string, competence: string) {
     db.select({ transaction: transactions, walletName: wallets.name, categoryName: categories.name })
       .from(transactions).innerJoin(wallets, and(eq(transactions.walletId, wallets.id), eq(wallets.userId, userId)))
       .leftJoin(categories, and(eq(transactions.categoryId, categories.id), eq(categories.userId, userId)))
-      .where(and(eq(transactions.userId, userId), eq(transactions.competence, competence))).orderBy(desc(transactions.consumptionDate), desc(transactions.createdAt)),
+      .where(and(eq(transactions.userId, userId), eq(transactions.competence, competence), isNull(transactions.deletedAt))).orderBy(desc(transactions.consumptionDate), desc(transactions.createdAt)),
     db.select({ entry: scheduledEntries, categoryName: categories.name }).from(scheduledEntries)
       .leftJoin(scheduledRules, and(eq(scheduledEntries.scheduledRuleId, scheduledRules.id), eq(scheduledRules.userId, userId)))
       .leftJoin(categories, and(eq(scheduledRules.categoryId, categories.id), eq(categories.userId, userId)))
@@ -105,6 +105,23 @@ export async function billScheduledEntry(userId: string, id: string, input: { wa
 
 export async function skipScheduledEntry(userId: string, id: string) {
   await getDb().update(scheduledEntries).set({ status: "SKIPPED", updatedAt: now() }).where(and(eq(scheduledEntries.id, id), eq(scheduledEntries.userId, userId), eq(scheduledEntries.status, "PENDING")));
+}
+
+export async function removeTransaction(userId: string, id: string) {
+  const db = getDb();
+  const [transaction] = await db.select().from(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, userId), isNull(transactions.deletedAt))).limit(1);
+  if (!transaction) throw new Error("Lançamento não encontrado.");
+  const removedAt = now();
+  await db.transaction(async (tx) => {
+    if (transaction.transferId) {
+      await tx.update(transactions).set({ deletedAt: removedAt, updatedAt: removedAt }).where(and(eq(transactions.userId, userId), eq(transactions.transferId, transaction.transferId), isNull(transactions.deletedAt)));
+    } else {
+      await tx.update(transactions).set({ deletedAt: removedAt, updatedAt: removedAt }).where(and(eq(transactions.id, id), eq(transactions.userId, userId), isNull(transactions.deletedAt)));
+    }
+    if (transaction.scheduledEntryId) {
+      await tx.update(scheduledEntries).set({ status: "PENDING", billedTransactionId: null, updatedAt: removedAt }).where(and(eq(scheduledEntries.id, transaction.scheduledEntryId), eq(scheduledEntries.userId, userId), eq(scheduledEntries.billedTransactionId, id)));
+    }
+  });
 }
 
 export async function payCreditCard(userId: string, cardId: string, input: { sourceWalletId: string; amountCents: number; date: string; competence: string }) {

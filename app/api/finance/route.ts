@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getSession } from "@/lib/auth/server";
-import { billScheduledEntry, createCategory, createPurchase, createScheduledRule, createWallet, getFinanceData, payCreditCard, skipScheduledEntry, updateCategory, updateWallet } from "@/modules/finance/service";
+import { billScheduledEntry, createCategory, createPurchase, createScheduledRule, createWallet, getFinanceData, payCreditCard, removeTransaction, skipScheduledEntry, updateCategory, updateWallet } from "@/modules/finance/service";
 
 export const dynamic = "force-dynamic";
 const id = z.string().uuid();
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       case "billSchedule": { const v = z.object({ action: z.literal("billSchedule"), id, walletId: id, amountCents: money, consumptionDate: date, description: z.string().optional(), categoryId: id.optional() }).parse(body); await billScheduledEntry(uid, v.id, v); break; }
       case "skipSchedule": { const v = z.object({ action: z.literal("skipSchedule"), id }).parse(body); await skipScheduledEntry(uid, v.id); break; }
       case "payCard": { const v = z.object({ action: z.literal("payCard"), cardId: id, sourceWalletId: id, amountCents: money, date, competence: date }).parse(body); await payCreditCard(uid, v.cardId, v); break; }
+      case "removeTransaction": { const v = z.object({ action: z.literal("removeTransaction"), id }).parse(body); await removeTransaction(uid, v.id); break; }
       default: return Response.json({ error: "Operação inválida." }, { status: 400 });
     }
     return Response.json({ ok: true });
