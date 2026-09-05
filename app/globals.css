@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --background: #050505;
+  --foreground: #f5f5f5;
+  --surface: #0a0a0a;
+  --border: #202020;
+  --muted: #9ca3af;
+  --green: #168a55;
+  --green-hover: #1fa866;
 }
 
 @theme inline {
@@ -12,15 +18,52 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif; }
+button, input { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled), a { cursor: pointer; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--green-hover); outline-offset: 4px; }
+.auth-shell { display: flex; flex-direction: column; min-height: 100svh; }
+.site-header { padding: 30px 5vw; border-bottom: 1px solid #161616; }
+.brand { font-weight: 650; font-size: 25px; letter-spacing: -1.4px; white-space: nowrap; }
+.brand > span { color: var(--green-hover); margin-left: 2px; }
+.auth-main { flex: 1; display: grid; place-items: center; padding: 54px 24px; }
+.auth-card { width: 100%; max-width: 430px; padding: 38px 34px 30px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.eyebrow { font-size: 10px; letter-spacing: 1.8px; font-weight: 600; color: var(--green-hover); margin: 0 0 17px; }
+h1 { font-size: clamp(26px, 4vw, 31px); font-weight: 550; letter-spacing: -1.2px; line-height: 1.2; margin: 0; }
+.form-heading > p:last-child { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 14px 0 30px; }
+fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
+label { display: block; font-size: 13px; font-weight: 500; margin: 21px 0 9px; }
+label:first-child { margin-top: 0; }
+input { display: block; width: 100%; min-height: 48px; padding: 12px 14px; background: #111; color: var(--foreground); border: 1px solid #2b2b2b; border-radius: 8px; font-size: 16px; }
+input::placeholder { color: #80848b; font-size: 14px; }
+input:focus { border-color: var(--green-hover); }
+.input-hint { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 8px 0 0; }
+.primary-button { width: 100%; min-height: 48px; display: flex; justify-content: center; align-items: center; gap: 12px; border: 1px solid transparent; border-radius: 8px; background: var(--green); color: #fff; font-size: 14px; font-weight: 650; margin-top: 28px; padding: 12px 18px; }
+.primary-button:hover:not(:disabled) { background: var(--green-hover); color: #050505; }
+.primary-button:disabled { opacity: .6; cursor: wait; }
+fieldset:disabled .primary-button { cursor: not-allowed; }
+.switch-auth { text-align: center; color: var(--muted); font-size: 12px; line-height: 1.9; margin: 25px 0 0; }
+.switch-auth a { color: var(--foreground); font-weight: 500; text-decoration: underline; text-underline-offset: 4px; margin-left: 3px; }
+.switch-auth a:hover { color: var(--green-hover); }
+.form-message, .notice { font-size: 13px; line-height: 1.6; margin: 16px 0 0; }
+.error { color: #f08080; }
+.success { color: #57c98c; }
+.notice { padding: 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); margin-bottom: 20px; }
+.site-footer { padding: 20px 24px 28px; text-align: center; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.status-dot { display: inline-block; height: 5px; width: 5px; border-radius: 50%; background: var(--green); margin: 0 8px 2px 0; }
+.welcome-main { flex: 1; display: grid; place-items: center; padding: 72px 24px; min-height: 75svh; }
+.welcome-content { text-align: center; width: 100%; max-width: 460px; }
+.welcome-content h1 { font-size: clamp(38px, 7vw, 60px); letter-spacing: -2px; }
+.success-mark { display: grid; place-items: center; width: 52px; height: 52px; border: 1px solid #0d5f3a; border-radius: 50%; background: #08160f; color: #57c98c; margin: 0 auto 32px; font-size: 23px; }
+.welcome-description { color: var(--muted); line-height: 1.7; margin: 18px 0 0; }
+.user-email { color: var(--muted); overflow-wrap: anywhere; font-size: 13px; margin: 12px 0 0; }
+.sign-out { max-width: 180px; margin: 32px auto 0; }
+@media (max-width: 480px) {
+  .site-header { padding: 24px; }
+  .auth-main { padding: 38px 24px; }
+  .auth-card { padding: 15px 0; background: transparent; border: 0; }
+  .site-footer { max-width: 290px; margin: auto; }
 }

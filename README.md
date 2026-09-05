@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Equili.bra+ — Entrega 01
 
-## Getting Started
+Fundação Next.js 16 + Neon Auth, restrita a cadastro, login, sessão persistente, logout e uma página privada com Hello World. Não há tabelas ou funcionalidades financeiras.
 
-First, run the development server:
+## Executar localmente
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Instale as dependências com `npm ci`.
+2. Copie `.env.example` para `.env.local`.
+3. Defina `NEON_AUTH_BASE_URL` com o endpoint **HTTPS do Neon Auth do branch development**. Não use a conexão PostgreSQL.
+4. Gere um segredo local com `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"` e configure `NEON_AUTH_COOKIE_SECRET`. Não o versione.
+5. Execute `npm run dev` e abra http://localhost:3000.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sem as variáveis, os formulários ficam indisponíveis e `/app` continua bloqueada. Configuração inválida nunca concede uma sessão.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Rotas e segurança
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `/` encaminha para `/sign-in`.
+- `/sign-in` e `/sign-up`: formulários em português; sessão existente encaminha para `/app`.
+- `/app`: proxy oficial renova os cookies e filtra acesso; a página também consulta o Neon no servidor, ignorando o cache de sessão para respeitar revogação.
+- `/api/auth/[...path]`: handler do SDK oficial. Senhas são enviadas ao Neon Auth; a aplicação não armazena nem calcula hashes.
+- Login usa `rememberMe: true`. A duração real da sessão segue a política do Neon; o segredo precisa permanecer estável entre deploys.
+- Logout usa o SDK e faz navegação completa para descartar o cache do roteador.
+- Nenhum token ou senha é armazenado manualmente no localStorage.
+- O SDK exige nome no cadastro; o e-mail é reutilizado nesse campo, mantendo apenas os três campos solicitados.
+- Se o Neon exigir verificação por e-mail, o cadastro orienta a verificação antes do login.
 
-## Learn More
+## Ambientes e publicação
 
-To learn more about Next.js, take a look at the following resources:
+Projeto GitHub: `dyegohbb/equilibra-plus`. Produção: https://equilibra-plus.vercel.app.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Configure na Vercel, no ambiente **Production**:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `NEON_AUTH_BASE_URL`: endpoint do Auth do branch `production`.
+- `NEON_AUTH_COOKIE_SECRET`: segredo criptográfico de pelo menos 32 caracteres, diferente do DEV e salvo como Secret.
 
-## Deploy on Vercel
+Development e Preview devem usar um branch isolado do Neon e outro segredo. Cadastre apenas as origens necessárias em Neon Auth → Configuration → Trusted domains. Não utilize wildcard global. O SDK também faz o proxy de autenticação pela mesma origem da aplicação.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+A Vercel está ligada ao branch `main`. Um push publica nova versão; alteração de variável exige novo deploy. Para rollback do código, use a implantação anterior na Vercel. Evite trocar o segredo sem necessidade: isso invalida o cache de cookies assinado.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Verificação
+
+- `npm run lint`
+- `npm run build`
+- `npm run test:e2e`
+
+Os testes usam o Chrome instalado, em processo separado, sem acessar o perfil pessoal. Cobrem rotas privadas, cookie forjado, responsividade, validação e credenciais inválidas. Os testes que precisam do Neon são marcados como pendentes se ele não estiver configurado.
+
+Para executar o fluxo completo com conta descartável no **DEV**, defina `E2E_ALLOW_DEV_SIGNUP=1` antes de `npm run test:e2e`. Isso cria uma conta com e-mail fictício e senha aleatória apenas no DEV. O teste exige localhost; nunca use essa opção apontando o servidor local para produção. Senhas, cookies e traces não são gravados pelo teste. A conta de teste permanece no Neon DEV.
+
+Esse fluxo cobre cadastro, duplicidade, login, refresh, redirecionamento autenticado, cookies persistentes em um novo contexto e logout com revogação. Um novo contexto não substitui a verificação manual de fechar e reabrir o navegador inteiro.
+
+A conclusão da Entrega 01 exige repetir os testes T01–T10 do documento de escopo na URL de produção, incluindo fechar/reabrir navegador e usar celular real. Em produção, utilize uma conta do proprietário, sem seeds de teste.
+
+## Referências
+
+- [Neon Auth Next.js oficial](https://github.com/neondatabase/neon-js/blob/main/packages/auth/NEXT-JS.md)
+- Versão instalada: `@neondatabase/auth` 0.5.0-beta; Next.js 16.3.4. Assinaturas verificadas no pacote instalado.
+- Guias locais Next.js: `node_modules/next/dist/docs/`.
