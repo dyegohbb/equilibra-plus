@@ -51,3 +51,7 @@ export function parseMoneyToCents(value: string) {
   if (!Number.isSafeInteger(cents) || cents <= 0) throw new Error("Valor inválido.");
   return cents;
 }
+
+export function calculateProjectedBalance(availableBalanceCents: number, pendingAmountsCents: number[]) {
+  return availableBalanceCents + pendingAmountsCents.reduce((total, amount) => total + amount, 0);
+}
