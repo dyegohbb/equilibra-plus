@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { categories, purchases, scheduledEntries, scheduledRules, transactions, wallets } from "@/db/schema";
 import { addMonths, calculateCompetence, calculateInstallmentCompetences, calculateInstallments, type InstallmentMode } from "./domain";
@@ -9,7 +9,7 @@ const now = () => new Date();
 
 export async function getFinanceData(userId: string, competence: string) {
   const db = getDb();
-  const [walletRows, categoryRows, transactionRows, scheduleRows] = await Promise.all([
+  const [walletRows, categoryRows, transactionRows, scheduleRows, balanceRows] = await Promise.all([
     db.select().from(wallets).where(eq(wallets.userId, userId)).orderBy(desc(wallets.active), asc(wallets.name)),
     db.select().from(categories).where(eq(categories.userId, userId)).orderBy(desc(categories.active), asc(categories.name)),
     db.select({ transaction: transactions, walletName: wallets.name, categoryName: categories.name })
@@ -20,13 +20,20 @@ export async function getFinanceData(userId: string, competence: string) {
       .leftJoin(scheduledRules, and(eq(scheduledEntries.scheduledRuleId, scheduledRules.id), eq(scheduledRules.userId, userId)))
       .leftJoin(categories, and(eq(scheduledRules.categoryId, categories.id), eq(categories.userId, userId)))
       .where(and(eq(scheduledEntries.userId, userId), eq(scheduledEntries.competence, competence))).orderBy(asc(scheduledEntries.description)),
+    db.select({ walletId: transactions.walletId, balanceCents: sql<number>`coalesce(sum(${transactions.amountCents}), 0)`.mapWith(Number) }).from(transactions)
+      .where(and(eq(transactions.userId, userId), lte(transactions.competence, competence), isNull(transactions.deletedAt))).groupBy(transactions.walletId),
   ]);
   const real = transactionRows.filter(({ transaction }) => transaction.type !== "CARD_PAYMENT" && transaction.type !== "TRANSFER");
   const incomeCents = real.reduce((sum, row) => sum + Math.max(row.transaction.amountCents, 0), 0);
   const expenseCents = real.reduce((sum, row) => sum + Math.abs(Math.min(row.transaction.amountCents, 0)), 0);
   const pendingCents = scheduleRows.filter(({ entry }) => entry.status === "PENDING").reduce((sum, { entry }) => sum + Math.abs(entry.expectedAmountCents), 0);
-  const cards = walletRows.filter((wallet) => wallet.type === "CREDIT_CARD").map((wallet) => ({ ...wallet, invoiceCents: Math.abs(transactionRows.filter(({ transaction }) => transaction.walletId === wallet.id && transaction.purchaseId).reduce((sum, { transaction }) => sum + transaction.amountCents, 0)) }));
-  return { wallets: walletRows, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents }, cards };
+  const balances = new Map(balanceRows.map((row) => [row.walletId, row.balanceCents]));
+  const walletBalances = walletRows.map((wallet) => ({ ...wallet, balanceCents: balances.get(wallet.id) ?? 0 }));
+  const availableBalanceCents = walletBalances.filter((wallet) => wallet.type === "CASH_ACCOUNT").reduce((sum, wallet) => sum + wallet.balanceCents, 0);
+  const cardDebtCents = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").reduce((sum, wallet) => sum + Math.abs(Math.min(wallet.balanceCents, 0)), 0);
+  const netWorthCents = walletBalances.reduce((sum, wallet) => sum + wallet.balanceCents, 0);
+  const cards = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").map((wallet) => ({ ...wallet, invoiceCents: Math.abs(transactionRows.filter(({ transaction }) => transaction.walletId === wallet.id && transaction.purchaseId).reduce((sum, { transaction }) => sum + transaction.amountCents, 0)), outstandingCents: Math.abs(Math.min(wallet.balanceCents, 0)) }));
+  return { wallets: walletRows, walletBalances, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents, availableBalanceCents, cardDebtCents, netWorthCents }, cards };
 }
 
 export async function createWallet(userId: string, input: { name: string; type: "CASH_ACCOUNT" | "CREDIT_CARD"; closingDay?: number; dueDay?: number }) {
