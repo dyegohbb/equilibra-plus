@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth/client";
 import { Spinner } from "@/components/ui/spinner";
+import { setNextPageNotification, useNotifications } from "@/components/ui/notifications";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -12,7 +13,9 @@ export function AuthForm({ mode, available }: { mode: "sign-in" | "sign-up"; ava
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const submitting = useRef(false);
+  const notify = useNotifications();
   const busy = status === "loading" || status === "success";
+  useEffect(() => { if (message && status === "error") notify("error", message); }, [message, status, notify]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,6 +50,7 @@ export function AuthForm({ mode, available }: { mode: "sign-in" | "sign-up"; ava
       setStatus("success");
       if (session.data?.user) {
         setMessage("Tudo certo. Abrindo sua área…");
+        setNextPageNotification("success", signUp ? "Conta criada com sucesso." : "Login realizado com sucesso.");
         window.location.replace("/app");
       } else {
         setMessage(signUp ? "Conta criada. Verifique seu e-mail, se solicitado, e entre para continuar." : "Não foi possível iniciar sua sessão. Tente entrar novamente.");

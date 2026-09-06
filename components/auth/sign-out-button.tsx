@@ -3,11 +3,13 @@
 import { useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
 import { Spinner } from "@/components/ui/spinner";
+import { setNextPageNotification, useNotifications } from "@/components/ui/notifications";
 
 export function SignOutButton() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submitting = useRef(false);
+  const notify = useNotifications();
   async function signOut() {
     if (submitting.current) return;
     submitting.current = true;
@@ -16,9 +18,11 @@ export function SignOutButton() {
     try {
       const result = await authClient.signOut();
       if (result.error) throw new Error("Logout failed");
+      setNextPageNotification("success", "Sessão encerrada com sucesso.");
       window.location.replace("/sign-in");
     } catch {
       setError("Não foi possível sair. Tente novamente.");
+      notify("error", "Não foi possível sair. Tente novamente.");
       submitting.current = false;
       setBusy(false);
     }
