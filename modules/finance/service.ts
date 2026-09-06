@@ -69,10 +69,22 @@ async function ownedWallet(userId: string, id: string) {
   if (!wallet) throw new Error("Carteira não encontrada."); return wallet;
 }
 
-export async function createPurchase(userId: string, input: { description: string; amountCents: number; type: TransactionKind; walletId: string; categoryId?: string; consumptionDate: string; competence?: string; mode: "CASH" | InstallmentMode; quantity?: number }) {
+async function ownedCategory(userId: string, id?: string) {
+  if (!id) return null;
+  const [category] = await getDb().select({ id: categories.id }).from(categories).where(and(eq(categories.id, id), eq(categories.userId, userId), eq(categories.active, true))).limit(1);
+  if (!category) throw new Error("Categoria não encontrada.");
+  return category.id;
+}
+
+export async function createPurchase(userId: string, input: { description: string; amountCents: number; type: TransactionKind; walletId: string; categoryId?: string; consumptionDate: string; competence?: string; mode: "CASH" | InstallmentMode; quantity?: number; externalId?: string }) {
   const description = input.description.trim(); if (!description || description.length > 120) throw new Error("Descrição inválida.");
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Valor inválido.");
   const wallet = await ownedWallet(userId, input.walletId);
+  const categoryId = await ownedCategory(userId, input.categoryId);
+  if (input.externalId) {
+    const [existing] = await getDb().select({ id: transactions.id, purchaseId: transactions.purchaseId, competence: transactions.competence }).from(transactions).where(and(eq(transactions.userId, userId), eq(transactions.externalId, input.externalId))).limit(1);
+    if (existing) return { purchaseId: existing.purchaseId, values: [], competences: [existing.competence], duplicate: true };
+  }
   const quantity = input.mode === "CASH" ? 1 : input.quantity ?? 0;
   const values = input.mode === "CASH" ? [input.amountCents] : calculateInstallments(input.mode, input.amountCents, quantity);
   const initial = input.competence ?? calculateCompetence(wallet.type, input.consumptionDate, wallet.closingDay);
@@ -82,9 +94,9 @@ export async function createPurchase(userId: string, input: { description: strin
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx.insert(purchases).values({ id: purchaseId, userId, description, mode: input.mode, totalAmountCents: values.reduce((a, b) => a + b, 0), installmentTotal: quantity });
-    await tx.insert(transactions).values(values.map((value, index) => ({ userId, walletId: wallet.id, purchaseId, description, amountCents: value * sign, type: input.type, categoryId: input.categoryId || null, consumptionDate: input.consumptionDate, competence: competences[index], installmentNumber: quantity > 1 ? index + 1 : null, installmentTotal: quantity > 1 ? quantity : null })));
+    await tx.insert(transactions).values(values.map((value, index) => ({ userId, walletId: wallet.id, purchaseId, externalId: index === 0 ? input.externalId : null, description, amountCents: value * sign, type: input.type, categoryId, consumptionDate: input.consumptionDate, competence: competences[index], installmentNumber: quantity > 1 ? index + 1 : null, installmentTotal: quantity > 1 ? quantity : null })));
   });
-  return { values, competences };
+  return { purchaseId, values, competences, duplicate: false };
 }
 
 export async function createScheduledRule(userId: string, input: { description: string; amountCents: number; type: TransactionKind; categoryId?: string; startCompetence: string; endCompetence?: string }) {
