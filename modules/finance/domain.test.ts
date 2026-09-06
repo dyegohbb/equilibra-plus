@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { calculateCompetence, calculateInstallmentCompetences, calculateInstallments, parseMoneyToCents } from "./domain";
+import { calculateCompetence, calculateInstallmentCompetences, calculateInstallments, calculateProjectedBalance, parseMoneyToCents } from "./domain";
 
 describe("competência", () => {
   it("usa o mês do consumo em conta normal", () => expect(calculateCompetence("CASH_ACCOUNT", "2026-09-05")).toBe("2026-09-01"));
   it("vira o mês após fechamento do cartão", () => expect(calculateCompetence("CREDIT_CARD", "2026-09-05", 1)).toBe("2026-10-01"));
   it("mantém o mês até o fechamento", () => expect(calculateCompetence("CREDIT_CARD", "2026-09-05", 9)).toBe("2026-09-01"));
+});
+
+describe("saldo previsto acumulado", () => {
+  it("considera pendências do mês atual", () => expect(calculateProjectedBalance(0, [-100000])).toBe(-100000));
+  it("acumula pendências não faturadas de meses anteriores", () => expect(calculateProjectedBalance(0, [-100000, -100000])).toBe(-200000));
+  it("parte do saldo realizado acumulado", () => expect(calculateProjectedBalance(1000000, [-100000, -100000])).toBe(800000));
 });
 
 describe("parcelas", () => {

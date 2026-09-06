@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getSession } from "@/lib/auth/server";
-import { billScheduledEntry, createCategory, createPurchase, createScheduledRule, createWallet, getFinanceData, payCreditCard, removeTransaction, skipScheduledEntry, updateCategory, updateTransaction, updateWallet } from "@/modules/finance/service";
+import { billScheduledEntry, createCategory, createPurchase, createScheduledRule, createWallet, deleteScheduledRule, getFinanceData, payCreditCard, removeTransaction, skipScheduledEntry, updateCategory, updateTransaction, updateWallet } from "@/modules/finance/service";
 
 export const dynamic = "force-dynamic";
 const id = z.string().uuid();
@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       case "createSchedule": { const v = z.object({ action: z.literal("createSchedule"), description: z.string(), amountCents: money, type: z.enum(["INCOME", "EXPENSE"]), categoryId: id.optional(), startCompetence: date, endCompetence: date.optional() }).parse(body); await createScheduledRule(uid, v); break; }
       case "billSchedule": { const v = z.object({ action: z.literal("billSchedule"), id, walletId: id, amountCents: money, consumptionDate: date, description: z.string().optional(), categoryId: id.optional() }).parse(body); await billScheduledEntry(uid, v.id, v); break; }
       case "skipSchedule": { const v = z.object({ action: z.literal("skipSchedule"), id }).parse(body); await skipScheduledEntry(uid, v.id); break; }
+      case "deleteScheduleRule": { const v = z.object({ action: z.literal("deleteScheduleRule"), id }).parse(body); await deleteScheduledRule(uid, v.id); break; }
       case "payCard": { const v = z.object({ action: z.literal("payCard"), cardId: id, sourceWalletId: id, amountCents: money, date, competence: date }).parse(body); await payCreditCard(uid, v.cardId, v); break; }
       case "removeTransaction": { const v = z.object({ action: z.literal("removeTransaction"), id }).parse(body); await removeTransaction(uid, v.id); break; }
       case "updateTransaction": { const v = z.object({ action: z.literal("updateTransaction"), id, description: z.string().min(1).max(120), walletId: id, consumptionDate: date, competence: date, type: z.enum(["INCOME", "EXPENSE"]) }).parse(body); await updateTransaction(uid, v.id, v); break; }

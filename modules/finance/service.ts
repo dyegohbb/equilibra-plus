@@ -2,14 +2,14 @@ import "server-only";
 import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { categories, purchases, scheduledEntries, scheduledRules, transactions, wallets } from "@/db/schema";
-import { addMonths, calculateCompetence, calculateInstallmentCompetences, calculateInstallments, type InstallmentMode } from "./domain";
+import { addMonths, calculateCompetence, calculateInstallmentCompetences, calculateInstallments, calculateProjectedBalance, type InstallmentMode } from "./domain";
 
 type TransactionKind = "INCOME" | "EXPENSE";
 const now = () => new Date();
 
 export async function getFinanceData(userId: string, competence: string) {
   const db = getDb();
-  const [walletRows, categoryRows, transactionRows, scheduleRows, balanceRows] = await Promise.all([
+  const [walletRows, categoryRows, transactionRows, scheduleRows, balanceRows, pendingBalanceRows] = await Promise.all([
     db.select().from(wallets).where(eq(wallets.userId, userId)).orderBy(desc(wallets.active), asc(wallets.name)),
     db.select().from(categories).where(eq(categories.userId, userId)).orderBy(desc(categories.active), asc(categories.name)),
     db.select({ transaction: transactions, walletName: wallets.name, categoryName: categories.name })
@@ -22,6 +22,8 @@ export async function getFinanceData(userId: string, competence: string) {
       .where(and(eq(scheduledEntries.userId, userId), eq(scheduledEntries.competence, competence))).orderBy(asc(scheduledEntries.description)),
     db.select({ walletId: transactions.walletId, balanceCents: sql<number>`coalesce(sum(${transactions.amountCents}), 0)`.mapWith(Number) }).from(transactions)
       .where(and(eq(transactions.userId, userId), lte(transactions.competence, competence), isNull(transactions.deletedAt))).groupBy(transactions.walletId),
+    db.select({ amountCents: sql<number>`coalesce(sum(${scheduledEntries.expectedAmountCents}), 0)`.mapWith(Number) }).from(scheduledEntries)
+      .where(and(eq(scheduledEntries.userId, userId), lte(scheduledEntries.competence, competence), eq(scheduledEntries.status, "PENDING"))),
   ]);
   const real = transactionRows.filter(({ transaction }) => transaction.type !== "CARD_PAYMENT" && transaction.type !== "TRANSFER");
   const incomeCents = real.reduce((sum, row) => sum + Math.max(row.transaction.amountCents, 0), 0);
@@ -32,8 +34,10 @@ export async function getFinanceData(userId: string, competence: string) {
   const availableBalanceCents = walletBalances.filter((wallet) => wallet.type === "CASH_ACCOUNT").reduce((sum, wallet) => sum + wallet.balanceCents, 0);
   const cardDebtCents = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").reduce((sum, wallet) => sum + Math.abs(Math.min(wallet.balanceCents, 0)), 0);
   const netWorthCents = walletBalances.reduce((sum, wallet) => sum + wallet.balanceCents, 0);
+  const pendingAccumulatedCents = pendingBalanceRows[0]?.amountCents ?? 0;
+  const projectedAvailableBalanceCents = calculateProjectedBalance(availableBalanceCents, [pendingAccumulatedCents]);
   const cards = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").map((wallet) => ({ ...wallet, invoiceCents: Math.abs(transactionRows.filter(({ transaction }) => transaction.walletId === wallet.id && transaction.purchaseId).reduce((sum, { transaction }) => sum + transaction.amountCents, 0)), outstandingCents: Math.abs(Math.min(wallet.balanceCents, 0)) }));
-  return { wallets: walletRows, walletBalances, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents, availableBalanceCents, cardDebtCents, netWorthCents }, cards };
+  return { wallets: walletRows, walletBalances, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents, pendingAccumulatedCents, projectedAvailableBalanceCents, availableBalanceCents, cardDebtCents, netWorthCents }, cards };
 }
 
 export async function createWallet(userId: string, input: { name: string; type: "CASH_ACCOUNT" | "CREDIT_CARD"; closingDay?: number; dueDay?: number }) {
@@ -124,6 +128,17 @@ export async function billScheduledEntry(userId: string, id: string, input: { wa
 
 export async function skipScheduledEntry(userId: string, id: string) {
   await getDb().update(scheduledEntries).set({ status: "SKIPPED", updatedAt: now() }).where(and(eq(scheduledEntries.id, id), eq(scheduledEntries.userId, userId), eq(scheduledEntries.status, "PENDING")));
+}
+
+export async function deleteScheduledRule(userId: string, id: string) {
+  const db = getDb();
+  const [rule] = await db.select({ id: scheduledRules.id }).from(scheduledRules).where(and(eq(scheduledRules.id, id), eq(scheduledRules.userId, userId), eq(scheduledRules.active, true))).limit(1);
+  if (!rule) throw new Error("Recorrência não encontrada.");
+  const changedAt = now();
+  await db.transaction(async (tx) => {
+    await tx.update(scheduledRules).set({ active: false, updatedAt: changedAt }).where(and(eq(scheduledRules.id, id), eq(scheduledRules.userId, userId)));
+    await tx.update(scheduledEntries).set({ status: "CANCELLED", updatedAt: changedAt }).where(and(eq(scheduledEntries.scheduledRuleId, id), eq(scheduledEntries.userId, userId), eq(scheduledEntries.status, "PENDING")));
+  });
 }
 
 export async function removeTransaction(userId: string, id: string) {
