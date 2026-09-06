@@ -22,7 +22,12 @@ export async function getFinanceData(userId: string, competence: string) {
       .where(and(eq(scheduledEntries.userId, userId), eq(scheduledEntries.competence, competence))).orderBy(asc(scheduledEntries.description)),
     db.select({ walletId: transactions.walletId, balanceCents: sql<number>`coalesce(sum(${transactions.amountCents}), 0)`.mapWith(Number) }).from(transactions)
       .where(and(eq(transactions.userId, userId), lte(transactions.competence, competence), isNull(transactions.deletedAt))).groupBy(transactions.walletId),
-    db.select({ amountCents: sql<number>`coalesce(sum(${scheduledEntries.expectedAmountCents}), 0)`.mapWith(Number) }).from(scheduledEntries)
+    db.select({
+      incomeCents: sql<number>`coalesce(sum(case when ${scheduledEntries.expectedAmountCents} > 0 then ${scheduledEntries.expectedAmountCents} else 0 end), 0)`.mapWith(Number),
+      expenseCents: sql<number>`coalesce(sum(case when ${scheduledEntries.expectedAmountCents} < 0 then -${scheduledEntries.expectedAmountCents} else 0 end), 0)`.mapWith(Number),
+      count: sql<number>`count(*)`.mapWith(Number),
+      oldestCompetence: sql<string | null>`min(${scheduledEntries.competence})`,
+    }).from(scheduledEntries)
       .where(and(eq(scheduledEntries.userId, userId), lte(scheduledEntries.competence, competence), eq(scheduledEntries.status, "PENDING"))),
   ]);
   const real = transactionRows.filter(({ transaction }) => transaction.type !== "CARD_PAYMENT" && transaction.type !== "TRANSFER");
@@ -34,10 +39,14 @@ export async function getFinanceData(userId: string, competence: string) {
   const availableBalanceCents = walletBalances.filter((wallet) => wallet.type === "CASH_ACCOUNT").reduce((sum, wallet) => sum + wallet.balanceCents, 0);
   const cardDebtCents = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").reduce((sum, wallet) => sum + Math.abs(Math.min(wallet.balanceCents, 0)), 0);
   const netWorthCents = walletBalances.reduce((sum, wallet) => sum + wallet.balanceCents, 0);
-  const pendingAccumulatedCents = pendingBalanceRows[0]?.amountCents ?? 0;
-  const projectedAvailableBalanceCents = calculateProjectedBalance(availableBalanceCents, [pendingAccumulatedCents]);
+  const pendingIncomeAccumulatedCents = pendingBalanceRows[0]?.incomeCents ?? 0;
+  const pendingExpenseAccumulatedCents = pendingBalanceRows[0]?.expenseCents ?? 0;
+  const pendingAccumulatedCount = pendingBalanceRows[0]?.count ?? 0;
+  const pendingOldestCompetence = pendingBalanceRows[0]?.oldestCompetence ?? null;
+  const pendingAccumulatedCents = pendingIncomeAccumulatedCents - pendingExpenseAccumulatedCents;
+  const projectedAvailableBalanceCents = calculateProjectedBalance(availableBalanceCents, pendingIncomeAccumulatedCents, pendingExpenseAccumulatedCents);
   const cards = walletBalances.filter((wallet) => wallet.type === "CREDIT_CARD").map((wallet) => ({ ...wallet, invoiceCents: Math.abs(transactionRows.filter(({ transaction }) => transaction.walletId === wallet.id && transaction.purchaseId).reduce((sum, { transaction }) => sum + transaction.amountCents, 0)), outstandingCents: Math.abs(Math.min(wallet.balanceCents, 0)) }));
-  return { wallets: walletRows, walletBalances, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents, pendingAccumulatedCents, projectedAvailableBalanceCents, availableBalanceCents, cardDebtCents, netWorthCents }, cards };
+  return { wallets: walletRows, walletBalances, categories: categoryRows, transactions: transactionRows, scheduled: scheduleRows, summary: { incomeCents, expenseCents, balanceCents: incomeCents - expenseCents, pendingCents, pendingAccumulatedCents, pendingIncomeAccumulatedCents, pendingExpenseAccumulatedCents, pendingAccumulatedCount, pendingOldestCompetence, projectedAvailableBalanceCents, availableBalanceCents, cardDebtCents, netWorthCents }, cards };
 }
 
 export async function createWallet(userId: string, input: { name: string; type: "CASH_ACCOUNT" | "CREDIT_CARD"; closingDay?: number; dueDay?: number }) {
