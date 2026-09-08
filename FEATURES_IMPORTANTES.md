@@ -6,6 +6,18 @@ O Equilibra+ já possui um núcleo funcional para finanças pessoais: autentica�
 
 As recomendações abaixo foram priorizadas pelo impacto na rotina, integridade dos dados e clareza financeira.
 
+## Implementado em 08/09/2026
+
+- Saldo inicial e ajustes auditáveis de carteira.
+- Extrato global paginado no servidor, com filtros e ações em lote.
+- Edição e cancelamento de parcelas por escopo.
+- Gestão de recorrências ativas, pausadas e encerradas, com edição futura.
+- Relatórios de fluxo, categorias, patrimônio, orçamento e projeção, com CSV.
+- Metas, aportes, retiradas e separação entre saldo realizado, reservado e livre.
+- Busca global e central de pendências.
+
+Os tópicos correspondentes abaixo permanecem como especificação funcional e histórico de priorização.
+
 ## Prioridade 1 — necessárias para uso diário confiável
 
 ### 1. Saldo inicial e ajuste de carteira

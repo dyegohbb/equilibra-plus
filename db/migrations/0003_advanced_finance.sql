@@ -1,0 +1,11 @@
+ALTER TYPE "transaction_type" ADD VALUE IF NOT EXISTS 'ADJUSTMENT';
+ALTER TYPE "schedule_status" ADD VALUE IF NOT EXISTS 'PAUSED';
+ALTER TABLE "scheduled_rules" ADD COLUMN "default_wallet_id" uuid REFERENCES "wallets"("id");
+ALTER TABLE "scheduled_rules" ADD COLUMN "paused" boolean DEFAULT false NOT NULL;
+CREATE TABLE "budgets" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),"user_id" text NOT NULL,"category_id" uuid NOT NULL REFERENCES "categories"("id"),"competence" date NOT NULL,"amount_cents" bigint NOT NULL,"created_at" timestamptz DEFAULT now() NOT NULL,"updated_at" timestamptz DEFAULT now() NOT NULL,CONSTRAINT "budget_positive" CHECK ("amount_cents">0));
+CREATE UNIQUE INDEX "budgets_user_category_comp_unique" ON "budgets"("user_id","category_id","competence");
+CREATE INDEX "budgets_user_comp_idx" ON "budgets"("user_id","competence");
+CREATE TABLE "goals" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),"user_id" text NOT NULL,"name" text NOT NULL,"target_amount_cents" bigint NOT NULL,"target_date" date,"active" boolean DEFAULT true NOT NULL,"created_at" timestamptz DEFAULT now() NOT NULL,"updated_at" timestamptz DEFAULT now() NOT NULL,CONSTRAINT "goal_target_positive" CHECK ("target_amount_cents">0));
+CREATE INDEX "goals_user_active_idx" ON "goals"("user_id","active");
+CREATE TABLE "goal_entries" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),"user_id" text NOT NULL,"goal_id" uuid NOT NULL REFERENCES "goals"("id"),"amount_cents" bigint NOT NULL,"entry_date" date NOT NULL,"description" text NOT NULL,"created_at" timestamptz DEFAULT now() NOT NULL,"updated_at" timestamptz DEFAULT now() NOT NULL,CONSTRAINT "goal_entry_non_zero" CHECK ("amount_cents"<>0));
+CREATE INDEX "goal_entries_user_goal_idx" ON "goal_entries"("user_id","goal_id");

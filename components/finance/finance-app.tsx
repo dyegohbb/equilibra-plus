@@ -1,88 +1,1708 @@
 "use client";
-import { createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  FormEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Brand } from "@/components/ui/brand";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { LoadingState } from "@/components/ui/spinner";
 import { useNotifications } from "@/components/ui/notifications";
-import { calculateCompetence, calculateInstallmentCompetences, calculateInstallments, parseMoneyToCents } from "@/modules/finance/domain";
+import {
+  calculateCompetence,
+  calculateInstallmentCompetences,
+  calculateInstallments,
+  parseMoneyToCents,
+} from "@/modules/finance/domain";
+import {
+  AdvancedStatement,
+  GoalsPanel,
+  PendingPanel,
+  RecurringManager,
+  ReportsPanel,
+} from "@/components/finance/advanced-panels";
 
-type Wallet={id:string;name:string;type:"CASH_ACCOUNT"|"CREDIT_CARD";closingDay:number|null;dueDay:number|null;active:boolean}; type Category={id:string;name:string;type:string;active:boolean};
-type Tx={transaction:{id:string;walletId:string;description:string;amountCents:number;type:string;consumptionDate:string;competence:string;installmentNumber:number|null;installmentTotal:number|null;purchaseId:string|null};walletName:string;categoryName:string|null};
-type Scheduled={entry:{id:string;scheduledRuleId:string;description:string;expectedAmountCents:number;competence:string;status:string};categoryName:string|null};
-type Data={wallets:Wallet[];walletBalances:(Wallet&{balanceCents:number})[];categories:Category[];transactions:Tx[];scheduled:Scheduled[];summary:{incomeCents:number;expenseCents:number;balanceCents:number;pendingCents:number;pendingAccumulatedCents:number;pendingIncomeAccumulatedCents:number;pendingExpenseAccumulatedCents:number;pendingAccumulatedCount:number;pendingOldestCompetence:string|null;projectedAvailableBalanceCents:number;availableBalanceCents:number;cardDebtCents:number;netWorthCents:number};cards:(Wallet&{balanceCents:number;invoiceCents:number;outstandingCents:number})[]};
-type Tab="dashboard"|"new"|"transactions"|"wallets"|"scheduled"|"cards";
-const brl=new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}); const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/Recife"}); const current=`${today.slice(0,7)}-01`; const comp=(v:string)=>`${v.slice(5,7)}/${v.slice(0,4)}`; const fmt=(v:number)=>brl.format(v/100);
-const BalanceVisibilityContext=createContext(false);const BALANCE_VISIBILITY_KEY="equilibra:balances-visible";
-const items:[Tab,string][]=[["dashboard","Início"],["new","Novo Lançamento"],["transactions","Extrato"],["wallets","Carteiras"],["scheduled","Programados"],["cards","Cartões"]];
-const navIcons:Record<Tab,string>={dashboard:"⌂",new:"＋",transactions:"≡",wallets:"▣",scheduled:"◷",cards:"▰"};
-const successMessages:Record<string,string>={createWallet:"Carteira criada.",updateWallet:"Carteira atualizada.",createCategory:"Categoria criada.",updateCategory:"Categoria atualizada.",createPurchase:"Lançamento salvo no extrato.",createSchedule:"Recorrência criada.",billSchedule:"Programado faturado e adicionado ao extrato.",skipSchedule:"Programado ignorado neste mês.",deleteScheduleRule:"Recorrência excluída.",payCard:"Pagamento do cartão registrado."};
-export function FinanceApp({email,initialTab="dashboard"}:{email:string;initialTab?:Tab}){const[tab,setTab]=useState<Tab>(initialTab),[competence,setCompetence]=useState(current),[data,setData]=useState<Data|null>(null),[error,setError]=useState(""),[loading,setLoading]=useState(true),[actionBusy,setActionBusy]=useState(false),[balancesVisible,setBalancesVisible]=useState(false);
- const notify=useNotifications();
- // Começa oculto na primeira visita e restaura apenas uma escolha explícita deste navegador.
- // eslint-disable-next-line react-hooks/set-state-in-effect
- useEffect(()=>{setBalancesVisible(window.localStorage.getItem(BALANCE_VISIBILITY_KEY)==="true")},[]);
- function toggleBalances(){setBalancesVisible(visible=>{const next=!visible;window.localStorage.setItem(BALANCE_VISIBILITY_KEY,String(next));return next})}
- const load=useCallback(async()=>{setLoading(true);try{const r=await fetch(`/api/finance?competence=${competence}`,{cache:"no-store"}),j=await r.json();if(!r.ok)throw new Error(j.error);setData(j);setError("")}catch(e){setError(e instanceof Error?e.message:"Não foi possível carregar.")}finally{setLoading(false)}},[competence]);
- // eslint-disable-next-line react-hooks/set-state-in-effect
- useEffect(()=>{void load()},[load]);
- async function mutate(p:Record<string,unknown>){setActionBusy(true);try{const r=await fetch("/api/finance",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(p)}),j=await r.json();if(!r.ok)throw new Error(j.error);await load();notify("success",successMessages[String(p.action)]??"Alteração salva com sucesso.")}catch(e){const message=e instanceof Error?e.message:"Não foi possível concluir a operação.";notify("error",message);throw e}finally{setActionBusy(false)}}
- const wallets=data?.wallets.filter(x=>x.active)??[],categories=data?.categories.filter(x=>x.active)??[];
- if(actionBusy)return <div className="full-page-loading"><LoadingState label="Salvando suas alterações…"/></div>;
- if(loading)return <div className="full-page-loading"><LoadingState label="Carregando seus números…"/></div>;
- return <BalanceVisibilityContext.Provider value={balancesVisible}><div className="finance-shell"><aside className="sidebar"><Brand/><Nav tab={tab} setTab={setTab}/><div className="account"><span>{email}</span><SignOutButton/></div></aside><main className="finance-main"><header className="app-topbar"><div><p className="eyebrow">EQUILI.BRA+</p><h1>{items.find(x=>x[0]===tab)?.[1]}</h1></div><div className="topbar-actions"><button className="visibility-button" type="button" onClick={toggleBalances} aria-pressed={balancesVisible} title={balancesVisible?"Ocultar valores":"Mostrar valores"}><span aria-hidden="true">{balancesVisible?"◉":"⊘"}</span>{balancesVisible?"Ocultar saldos":"Mostrar saldos"}</button><label>Competência<input type="month" value={competence.slice(0,7)} onChange={e=>setCompetence(`${e.target.value}-01`)}/></label></div></header><div className="mobile-nav"><Nav tab={tab} setTab={setTab}/></div>{error&&<p className="app-alert">{error}</p>}{loading&&<div className="panel">Organizando seus números…</div>}{data&&!loading&&<>{tab==="dashboard"&&<Dashboard data={data} setTab={setTab}/>} {tab==="new"&&<New wallets={wallets} categories={categories} mutate={mutate} done={()=>setTab("transactions")}/>} {tab==="transactions"&&<Statement rows={data.transactions}/>} {tab==="wallets"&&<Manage data={data} mutate={mutate}/>} {tab==="scheduled"&&<Schedules rows={data.scheduled} wallets={wallets} categories={categories} competence={competence} mutate={mutate}/>} {tab==="cards"&&<Cards data={data} wallets={wallets} competence={competence} mutate={mutate}/>}</>}</main></div></BalanceVisibilityContext.Provider>}
-function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){function navigate(id:Tab){window.history.pushState(null,"",id==="new"?"/lancamento":"/app");setTab(id)}return <nav>{items.map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>navigate(id)}><span aria-hidden="true">{navIcons[id]}</span>{label}</button>)}</nav>}
-function Dashboard({data,setTab}:{data:Data;setTab:(t:Tab)=>void}){
- const s=data.summary;
- const pendingRange=s.pendingOldestCompetence?`${comp(s.pendingOldestCompetence)} até a competência selecionada`:"Nenhuma pendência até a competência selecionada";
- return <div className="page-stack">
-  <section className="balance-hero">
-   <div><div className="label-with-info"><p className="eyebrow">SALDO REALIZADO ACUMULADO</p><InfoTip text="Soma dos lançamentos já realizados nas contas até a competência selecionada. Não inclui cartões nem programações pendentes."/></div><strong><Money value={s.availableBalanceCents}/></strong></div>
-   <div className="hero-stats"><span><span className="label-with-info">Saídas pendentes <InfoTip text="Soma de todas as saídas programadas que continuam pendentes, desde a ocorrência mais antiga até a competência selecionada."/></span><b className="negative"><Money value={s.pendingExpenseAccumulatedCents} prefix="− "/></b></span><span><span className="label-with-info">Entradas pendentes <InfoTip text="Soma de todas as entradas programadas que continuam pendentes até a competência selecionada."/></span><b className="positive"><Money value={s.pendingIncomeAccumulatedCents} prefix="+ "/></b></span><span><span className="label-with-info">Saldo previsto <InfoTip text="Saldo realizado menos as saídas pendentes, mais as entradas pendentes."/></span><b className={s.projectedAvailableBalanceCents<0?"negative":"positive"}><Money value={s.projectedAvailableBalanceCents}/></b></span></div>
-  </section>
-  <section className={`forecast-equation ${s.projectedAvailableBalanceCents<0?"forecast-negative":""}`}>
-   <div className="forecast-heading"><div><p className="eyebrow">PREVISÃO ACUMULADA</p><div className="label-with-info"><h2>Composição do saldo</h2><InfoTip text={`${pendingRange}. Inclui todos os meses anteriores com programações que ainda não foram faturadas ou ignoradas.`}/></div></div><span>{s.pendingAccumulatedCount} {s.pendingAccumulatedCount===1?"pendência":"pendências"}</span></div>
-   <div className="forecast-terms">
-    <div className="forecast-term"><span>Saldo realizado</span><strong><Money value={s.availableBalanceCents}/></strong></div>
-    <b className="forecast-operator" aria-label="menos">−</b>
-    <div className="forecast-term expense-term"><span>Saídas pendentes</span><strong><Money value={s.pendingExpenseAccumulatedCents}/></strong></div>
-    <b className="forecast-operator" aria-label="mais">+</b>
-    <div className="forecast-term income-term"><span>Entradas pendentes</span><strong><Money value={s.pendingIncomeAccumulatedCents}/></strong></div>
-    <b className="forecast-operator" aria-label="igual">=</b>
-    <div className="forecast-term result-term"><span>Saldo previsto</span><strong><Money value={s.projectedAvailableBalanceCents}/></strong></div>
-   </div>
-  </section>
-  <section className="summary-grid compact-metrics"><Metric label="Entradas do mês" value={s.incomeCents}/><Metric label="Saídas do mês" value={s.expenseCents}/><Metric label="Resultado do mês" value={s.balanceCents}/><Metric label="Programado neste mês" value={s.pendingCents}/></section>
-  <Panel title="Suas carteiras"><div className="wallet-grid">{data.walletBalances.filter(x=>x.active).map(x=><article className={`wallet-balance ${x.type==="CREDIT_CARD"?"wallet-card":""}`} key={x.id}><span>{x.type==="CREDIT_CARD"?"Cartão de crédito":"Conta disponível"}</span><h3>{x.name}</h3><strong className={x.balanceCents<0?"negative":"positive"}><Money value={x.balanceCents}/></strong><small>{x.type==="CREDIT_CARD"?(x.balanceCents<0?"Saldo em aberto":"Cartão quitado"):"Saldo acumulado"}</small></article>)}</div></Panel>
-  <div className="two-columns"><Panel title="Últimos lançamentos"><TxList rows={data.transactions.slice(0,5)}/><button className="text-button" onClick={()=>setTab("transactions")}>Ver extrato completo</button></Panel><Panel title="Programados deste mês">{data.scheduled.filter(x=>x.entry.status==="PENDING").slice(0,5).map(x=><div className="simple-row" key={x.entry.id}><div><b>{x.entry.description}</b><span>{x.categoryName??"Sem categoria"}</span></div><strong className={x.entry.expectedAmountCents<0?"negative":"positive"}><Money value={x.entry.expectedAmountCents}/></strong></div>)}{!data.scheduled.some(x=>x.entry.status==="PENDING")&&<Empty/>}</Panel></div>
-  <Panel title="Cartões"><div className="card-strip">{data.cards.map(x=><article className="credit-card" key={x.id}><span>{x.name}</span><small>Saldo em aberto</small><strong><Money value={x.outstandingCents}/></strong><small>Compras do mês: <Money value={x.invoiceCents}/></small></article>)}{!data.cards.length&&<Empty text="Cadastre um cartão para acompanhar faturas."/>}</div></Panel>
- </div>
+type Wallet = {
+  id: string;
+  name: string;
+  type: "CASH_ACCOUNT" | "CREDIT_CARD";
+  closingDay: number | null;
+  dueDay: number | null;
+  active: boolean;
+};
+type Category = { id: string; name: string; type: string; active: boolean };
+type Tx = {
+  transaction: {
+    id: string;
+    walletId: string;
+    description: string;
+    amountCents: number;
+    type: string;
+    consumptionDate: string;
+    competence: string;
+    installmentNumber: number | null;
+    installmentTotal: number | null;
+    purchaseId: string | null;
+  };
+  walletName: string;
+  categoryName: string | null;
+};
+type Scheduled = {
+  entry: {
+    id: string;
+    scheduledRuleId: string;
+    description: string;
+    expectedAmountCents: number;
+    competence: string;
+    status: string;
+  };
+  categoryName: string | null;
+  defaultWalletId: string | null;
+};
+type Data = {
+  wallets: Wallet[];
+  walletBalances: (Wallet & { balanceCents: number })[];
+  categories: Category[];
+  transactions: Tx[];
+  scheduled: Scheduled[];
+  summary: {
+    incomeCents: number;
+    expenseCents: number;
+    balanceCents: number;
+    pendingCents: number;
+    pendingAccumulatedCents: number;
+    pendingIncomeAccumulatedCents: number;
+    pendingExpenseAccumulatedCents: number;
+    pendingAccumulatedCount: number;
+    pendingOldestCompetence: string | null;
+    projectedAvailableBalanceCents: number;
+    availableBalanceCents: number;
+    reservedCents: number;
+    unreservedBalanceCents: number;
+    cardDebtCents: number;
+    netWorthCents: number;
+  };
+  cards: (Wallet & {
+    balanceCents: number;
+    invoiceCents: number;
+    outstandingCents: number;
+  })[];
+};
+type Tab =
+  | "dashboard"
+  | "new"
+  | "transactions"
+  | "wallets"
+  | "scheduled"
+  | "cards"
+  | "reports"
+  | "goals"
+  | "pending";
+const brl = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+const today = new Date().toLocaleDateString("en-CA", {
+  timeZone: "America/Recife",
+});
+const current = `${today.slice(0, 7)}-01`;
+const comp = (v: string) => `${v.slice(5, 7)}/${v.slice(0, 4)}`;
+const fmt = (v: number) => brl.format(v / 100);
+const BalanceVisibilityContext = createContext(false);
+const BALANCE_VISIBILITY_KEY = "equilibra:balances-visible";
+const items: [Tab, string][] = [
+  ["dashboard", "Início"],
+  ["new", "Novo Lançamento"],
+  ["transactions", "Extrato"],
+  ["wallets", "Carteiras"],
+  ["scheduled", "Programados"],
+  ["cards", "Cartões"],
+  ["reports", "Relatórios"],
+  ["goals", "Metas"],
+  ["pending", "Pendências"],
+];
+const navIcons: Record<Tab, string> = {
+  dashboard: "⌂",
+  new: "＋",
+  transactions: "≡",
+  wallets: "▣",
+  scheduled: "◷",
+  cards: "▰",
+  reports: "↗",
+  goals: "◎",
+  pending: "!",
+};
+const successMessages: Record<string, string> = {
+  createWallet: "Carteira criada.",
+  updateWallet: "Carteira atualizada.",
+  createCategory: "Categoria criada.",
+  updateCategory: "Categoria atualizada.",
+  createPurchase: "Lançamento salvo no extrato.",
+  createSchedule: "Recorrência criada.",
+  billSchedule: "Programado faturado e adicionado ao extrato.",
+  skipSchedule: "Programado ignorado neste mês.",
+  deleteScheduleRule: "Recorrência excluída.",
+  payCard: "Pagamento do cartão registrado.",
+};
+export function FinanceApp({
+  email,
+  initialTab = "dashboard",
+}: {
+  email: string;
+  initialTab?: Tab;
+}) {
+  const [tab, setTab] = useState<Tab>(initialTab),
+    [competence, setCompetence] = useState(current),
+    [data, setData] = useState<Data | null>(null),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
+    [actionBusy, setActionBusy] = useState(false),
+    [balancesVisible, setBalancesVisible] = useState(false);
+  const notify = useNotifications();
+  // Começa oculto na primeira visita e restaura apenas uma escolha explícita deste navegador.
+  useEffect(() => {
+    queueMicrotask(() => setBalancesVisible(window.localStorage.getItem(BALANCE_VISIBILITY_KEY) === "true"));
+  }, []);
+  function toggleBalances() {
+    setBalancesVisible((visible) => {
+      const next = !visible;
+      window.localStorage.setItem(BALANCE_VISIBILITY_KEY, String(next));
+      return next;
+    });
+  }
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/finance?competence=${competence}`, {
+          cache: "no-store",
+        }),
+        j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      setData(j);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível carregar.");
+    } finally {
+      setLoading(false);
+    }
+  }, [competence]);
+  useEffect(() => {
+    queueMicrotask(() => void load());
+  }, [load]);
+  async function mutate(p: Record<string, unknown>) {
+    setActionBusy(true);
+    try {
+      const r = await fetch("/api/finance", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(p),
+        }),
+        j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      await load();
+      notify(
+        "success",
+        successMessages[String(p.action)] ?? "Alteração salva com sucesso.",
+      );
+    } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : "Não foi possível concluir a operação.";
+      notify("error", message);
+      throw e;
+    } finally {
+      setActionBusy(false);
+    }
+  }
+  const wallets = data?.wallets.filter((x) => x.active) ?? [],
+    categories = data?.categories.filter((x) => x.active) ?? [];
+  if (actionBusy)
+    return (
+      <div className="full-page-loading">
+        <LoadingState label="Salvando suas alterações…" />
+      </div>
+    );
+  if (loading)
+    return (
+      <div className="full-page-loading">
+        <LoadingState label="Carregando seus números…" />
+      </div>
+    );
+  return (
+    <BalanceVisibilityContext.Provider value={balancesVisible}>
+      <div className="finance-shell">
+        <aside className="sidebar">
+          <Brand />
+          <Nav tab={tab} setTab={setTab} />
+          <div className="account">
+            <span>{email}</span>
+            <SignOutButton />
+          </div>
+        </aside>
+        <main className="finance-main">
+          <header className="app-topbar">
+            <div>
+              <p className="eyebrow">EQUILI.BRA+</p>
+              <h1>{items.find((x) => x[0] === tab)?.[1]}</h1>
+            </div>
+            <div className="topbar-actions">
+              <button
+                className="visibility-button"
+                type="button"
+                onClick={toggleBalances}
+                aria-pressed={balancesVisible}
+                title={balancesVisible ? "Ocultar valores" : "Mostrar valores"}
+              >
+                <span aria-hidden="true">{balancesVisible ? "◉" : "⊘"}</span>
+                {balancesVisible ? "Ocultar saldos" : "Mostrar saldos"}
+              </button>
+              <label>
+                Competência
+                <input
+                  type="month"
+                  value={competence.slice(0, 7)}
+                  onChange={(e) => setCompetence(`${e.target.value}-01`)}
+                />
+              </label>
+            </div>
+          </header>
+          <div className="mobile-nav">
+            <Nav tab={tab} setTab={setTab} />
+          </div>
+          {error && <p className="app-alert">{error}</p>}
+          {loading && <div className="panel">Organizando seus números…</div>}
+          {data && !loading && (
+            <>
+              {tab === "dashboard" && <Dashboard data={data} setTab={setTab} />}{" "}
+              {tab === "new" && (
+                <New
+                  wallets={wallets}
+                  categories={categories}
+                  mutate={mutate}
+                  done={() => setTab("transactions")}
+                />
+              )}{" "}
+              {tab === "transactions" && (
+                <AdvancedStatement
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  visible={balancesVisible}
+                />
+              )}{" "}
+              {tab === "wallets" && <Manage data={data} mutate={mutate} />}{" "}
+              {tab === "scheduled" && (
+                <>
+                  <Schedules
+                    rows={data.scheduled}
+                    wallets={wallets}
+                    categories={categories}
+                    competence={competence}
+                    mutate={mutate}
+                  />
+                  <RecurringManager
+                    wallets={wallets}
+                    categories={categories}
+                    competence={competence}
+                    visible={balancesVisible}
+                  />
+                </>
+              )}{" "}
+              {tab === "cards" && (
+                <Cards
+                  data={data}
+                  wallets={wallets}
+                  competence={competence}
+                  mutate={mutate}
+                />
+              )}{" "}
+              {tab === "reports" && (
+                <ReportsPanel
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  visible={balancesVisible}
+                />
+              )}{" "}
+              {tab === "goals" && (
+                <GoalsPanel
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  visible={balancesVisible}
+                />
+              )}{" "}
+              {tab === "pending" && (
+                <PendingPanel
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  visible={balancesVisible}
+                />
+              )}
+            </>
+          )}
+        </main>
+      </div>
+    </BalanceVisibilityContext.Provider>
+  );
 }
-function Metric({label,value}:{label:string;value:number}){return <article className="metric"><div className="label-with-info"><span>{label}</span><InfoTip text="Valor referente somente à competência selecionada."/></div><strong className={value<0?"negative":""}><Money value={value}/></strong></article>}
-function New({wallets,categories,mutate,done}:{wallets:Wallet[];categories:Category[];mutate:(p:Record<string,unknown>)=>Promise<void>;done:()=>void}){
- const[wid,setWid]=useState(wallets[0]?.id??""),[kind,setKind]=useState<"INCOME"|"EXPENSE">("EXPENSE"),[mode,setMode]=useState<"CASH"|"INSTALLMENT_VALUE"|"TOTAL_VALUE">("CASH"),[amount,setAmount]=useState(""),[qty,setQty]=useState(2),[date,setDate]=useState(today),[override,setOverride]=useState(""),[error,setError]=useState(""),[categoryOpen,setCategoryOpen]=useState(false);
- const wallet=wallets.find(x=>x.id===wid);const initial=wallet?calculateCompetence(wallet.type,date,wallet.closingDay):current;const preview=useMemo(()=>{try{return mode==="CASH"||!amount?[]:calculateInstallments(mode,parseMoneyToCents(amount),qty).map((v,i)=>({v,c:calculateInstallmentCompetences(override?`${override}-01`:initial,qty)[i]}))}catch{return[]}},[mode,amount,qty,override,initial]);
- async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);try{await mutate({action:"createPurchase",description:f.get("description"),amountCents:parseMoneyToCents(amount),type:kind,walletId:wid,categoryId:f.get("categoryId")||undefined,consumptionDate:date,competence:override?`${override}-01`:undefined,mode,quantity:mode==="CASH"?undefined:qty});done()}catch(e){setError(e instanceof Error?e.message:"Erro ao salvar.")}}
- async function createCategory(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);try{await mutate({action:"createCategory",name:f.get("name"),type:f.get("type")});setCategoryOpen(false)}catch{}}
- if(!wallets.length)return <Empty text="Cadastre primeiro uma carteira."/>;
- return <><form className="panel form-panel" onSubmit={submit}><div className="segmented"><button type="button" className={kind==="EXPENSE"?"active":""} onClick={()=>setKind("EXPENSE")}>Saída</button><button type="button" className={kind==="INCOME"?"active":""} onClick={()=>setKind("INCOME")}>Entrada</button></div><div className="form-grid"><Field label="Descrição"><input name="description" required placeholder="Ex.: Mercado"/></Field><Field label="Valor"><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal" required placeholder="0,00"/></Field><Field label="Carteira"><select value={wid} onChange={e=>setWid(e.target.value)}>{wallets.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></Field><Field label="Categoria"><div className="select-with-action"><select name="categoryId"><option value="">Sem categoria</option>{categories.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select><button type="button" onClick={()=>setCategoryOpen(true)} aria-label="Criar uma categoria">＋</button></div></Field><Field label="Data de consumo"><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></Field><Field label="Forma"><select value={mode} onChange={e=>setMode(e.target.value as typeof mode)}><option value="CASH">À vista</option><option value="INSTALLMENT_VALUE">Valor da parcela</option><option value="TOTAL_VALUE">Valor total</option></select></Field>{mode!=="CASH"&&<Field label="Parcelas"><input type="number" min="2" max="120" value={qty} onChange={e=>setQty(+e.target.value)}/></Field>}<Field label="Competência manual (opcional)"><input type="month" value={override} onChange={e=>setOverride(e.target.value)}/></Field></div><p className="competence-note">Competência considerada: <b>{comp(override?`${override}-01`:initial)}</b></p>{preview.length>0&&<div className="preview">{preview.map((x,i)=><span key={i}>{i+1}/{preview.length} <b>{fmt(x.v)}</b> <small>{comp(x.c)}</small></span>)}</div>}{error&&<p className="error">{error}</p>}<button className="action-button">Salvar lançamento</button></form>
- {categoryOpen&&<div className="modal-backdrop" role="presentation" onMouseDown={()=>setCategoryOpen(false)}><form className="confirm-modal edit-modal category-modal" onSubmit={createCategory} onMouseDown={e=>e.stopPropagation()} aria-labelledby="category-title"><p className="eyebrow">NOVA CATEGORIA</p><h2 id="category-title">Adicionar categoria</h2><Field label="Nome"><input name="name" required autoFocus maxLength={60}/></Field><Field label="Uso"><select name="type" defaultValue={kind==="EXPENSE"?"EXPENSE":"INCOME"}><option value="EXPENSE">Saídas</option><option value="INCOME">Entradas</option><option value="BOTH">Entradas e saídas</option></select></Field><div className="confirm-actions"><button type="button" className="cancel-button" onClick={()=>setCategoryOpen(false)}>Cancelar</button><button className="action-button modal-save">Criar categoria</button></div></form></div>}</>
+function Nav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  function navigate(id: Tab) {
+    window.history.pushState(null, "", id === "new" ? "/lancamento" : "/app");
+    setTab(id);
+  }
+  return (
+    <nav>
+      {items.map(([id, label]) => (
+        <button
+          key={id}
+          className={tab === id ? "active" : ""}
+          onClick={() => navigate(id)}
+        >
+          <span aria-hidden="true">{navIcons[id]}</span>
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
 }
-function Statement({rows}:{rows:Tx[]}){
- const[q,setQ]=useState(""),[removing,setRemoving]=useState<Tx|null>(null),[editing,setEditing]=useState<Tx|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const notify=useNotifications();
- const walletOptions=Array.from(new Map(rows.map(row=>[row.transaction.walletId,row.walletName])).entries());
- async function request(payload:Record<string,unknown>){setBusy(true);setError("");try{const r=await fetch("/api/finance",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)}),j=await r.json();if(!r.ok)throw new Error(j.error);notify("success",payload.action==="removeTransaction"?"Lançamento removido do extrato.":"Lançamento atualizado.");window.setTimeout(()=>window.location.reload(),650)}catch(e){const message=e instanceof Error?e.message:"Não foi possível concluir a operação.";setError(message);notify("error",message);setBusy(false)}}
- function close(){if(!busy){setRemoving(null);setEditing(null);setError("")}}
- async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!editing)return;const f=new FormData(e.currentTarget);await request({action:"updateTransaction",id:editing.transaction.id,description:f.get("description"),walletId:f.get("walletId"),consumptionDate:f.get("consumptionDate"),competence:`${f.get("competence")}-01`,type:f.get("type")})}
- return <><Panel title="Extrato confirmado"><input className="search" placeholder="Buscar descrição…" value={q} onChange={e=>setQ(e.target.value)}/><TxList rows={rows.filter(x=>x.transaction.description.toLowerCase().includes(q.toLowerCase()))} onRemove={setRemoving} onEdit={setEditing}/></Panel>
- {removing&&<div className="modal-backdrop" role="presentation" onMouseDown={close}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="remove-title" onMouseDown={e=>e.stopPropagation()}><span className="warning-icon" aria-hidden="true">!</span><p className="eyebrow">CONFIRMAR EXCLUSÃO</p><h2 id="remove-title">Remover do extrato?</h2><p>O lançamento <strong>{removing.transaction.description}</strong>, no valor de <strong>{fmt(removing.transaction.amountCents)}</strong>, deixará de aparecer no extrato e nos totais.</p>{removing.transaction.type==="CARD_PAYMENT"&&<p className="modal-note">As duas movimentações vinculadas serão removidas juntas.</p>}{error&&<p className="error" role="alert">{error}</p>}<div className="confirm-actions"><button className="cancel-button" disabled={busy} onClick={close}>Cancelar</button><button className="danger-button" disabled={busy} onClick={()=>void request({action:"removeTransaction",id:removing.transaction.id})}>{busy?<LoadingState label="Removendo lançamento…"/>:"Sim, remover"}</button></div></section></div>}
- {editing&&<div className="modal-backdrop" role="presentation" onMouseDown={close}><form className="confirm-modal edit-modal" onSubmit={save} onMouseDown={e=>e.stopPropagation()} aria-labelledby="edit-title"><p className="eyebrow">EDITAR LANÇAMENTO</p><h2 id="edit-title">Ajustar movimentação</h2><Field label="Descrição"><input name="description" defaultValue={editing.transaction.description} maxLength={120} required/></Field><Field label="Carteira"><select name="walletId" defaultValue={editing.transaction.walletId}>{walletOptions.map(([id,name])=><option value={id} key={id}>{name}</option>)}</select></Field><div className="form-grid"><Field label="Data"><input name="consumptionDate" type="date" defaultValue={editing.transaction.consumptionDate} required/></Field><Field label="Competência"><input name="competence" type="month" defaultValue={editing.transaction.competence.slice(0,7)} required/></Field></div><Field label="Tipo"><select name="type" defaultValue={editing.transaction.amountCents<0?"EXPENSE":"INCOME"}><option value="EXPENSE">Saída</option><option value="INCOME">Entrada</option></select></Field>{error&&<p className="error" role="alert">{error}</p>}<div className="confirm-actions"><button type="button" className="cancel-button" disabled={busy} onClick={close}>Cancelar</button><button className="action-button modal-save" disabled={busy}>{busy?<LoadingState label="Salvando alterações…"/>:"Salvar alterações"}</button></div></form></div>}</>;
+function Dashboard({ data, setTab }: { data: Data; setTab: (t: Tab) => void }) {
+  const s = data.summary;
+  const pendingRange = s.pendingOldestCompetence
+    ? `${comp(s.pendingOldestCompetence)} até a competência selecionada`
+    : "Nenhuma pendência até a competência selecionada";
+  return (
+    <div className="page-stack">
+      <section className="balance-hero">
+        <div>
+          <div className="label-with-info">
+            <p className="eyebrow">SALDO REALIZADO ACUMULADO</p>
+            <InfoTip text="Soma dos lançamentos já realizados nas contas até a competência selecionada. Não inclui cartões nem programações pendentes." />
+          </div>
+          <strong>
+            <Money value={s.availableBalanceCents} />
+          </strong>
+        </div>
+        <div className="hero-stats">
+          <span>
+            <span className="label-with-info">
+              Saldo livre{" "}
+              <InfoTip text="Saldo realizado menos os valores separados em metas e reservas." />
+            </span>
+            <b
+              className={s.unreservedBalanceCents < 0 ? "negative" : "positive"}
+            >
+              <Money value={s.unreservedBalanceCents} />
+            </b>
+          </span>
+          <span>
+            <span className="label-with-info">
+              Saídas pendentes{" "}
+              <InfoTip text="Soma de todas as saídas programadas que continuam pendentes, desde a ocorrência mais antiga até a competência selecionada." />
+            </span>
+            <b className="negative">
+              <Money value={s.pendingExpenseAccumulatedCents} prefix="− " />
+            </b>
+          </span>
+          <span>
+            <span className="label-with-info">
+              Entradas pendentes{" "}
+              <InfoTip text="Soma de todas as entradas programadas que continuam pendentes até a competência selecionada." />
+            </span>
+            <b className="positive">
+              <Money value={s.pendingIncomeAccumulatedCents} prefix="+ " />
+            </b>
+          </span>
+          <span>
+            <span className="label-with-info">
+              Saldo previsto{" "}
+              <InfoTip text="Saldo realizado menos as saídas pendentes, mais as entradas pendentes." />
+            </span>
+            <b
+              className={
+                s.projectedAvailableBalanceCents < 0 ? "negative" : "positive"
+              }
+            >
+              <Money value={s.projectedAvailableBalanceCents} />
+            </b>
+          </span>
+        </div>
+      </section>
+      <section
+        className={`forecast-equation ${s.projectedAvailableBalanceCents < 0 ? "forecast-negative" : ""}`}
+      >
+        <div className="forecast-heading">
+          <div>
+            <p className="eyebrow">PREVISÃO ACUMULADA</p>
+            <div className="label-with-info">
+              <h2>Composição do saldo</h2>
+              <InfoTip
+                text={`${pendingRange}. Inclui todos os meses anteriores com programações que ainda não foram faturadas ou ignoradas.`}
+              />
+            </div>
+          </div>
+          <span>
+            {s.pendingAccumulatedCount}{" "}
+            {s.pendingAccumulatedCount === 1 ? "pendência" : "pendências"}
+          </span>
+        </div>
+        <div className="forecast-terms">
+          <div className="forecast-term">
+            <span>Saldo realizado</span>
+            <strong>
+              <Money value={s.availableBalanceCents} />
+            </strong>
+          </div>
+          <b className="forecast-operator" aria-label="menos">
+            −
+          </b>
+          <div className="forecast-term expense-term">
+            <span>Saídas pendentes</span>
+            <strong>
+              <Money value={s.pendingExpenseAccumulatedCents} />
+            </strong>
+          </div>
+          <b className="forecast-operator" aria-label="mais">
+            +
+          </b>
+          <div className="forecast-term income-term">
+            <span>Entradas pendentes</span>
+            <strong>
+              <Money value={s.pendingIncomeAccumulatedCents} />
+            </strong>
+          </div>
+          <b className="forecast-operator" aria-label="igual">
+            =
+          </b>
+          <div className="forecast-term result-term">
+            <span>Saldo previsto</span>
+            <strong>
+              <Money value={s.projectedAvailableBalanceCents} />
+            </strong>
+          </div>
+        </div>
+      </section>
+      <section className="summary-grid compact-metrics">
+        <Metric label="Entradas do mês" value={s.incomeCents} />
+        <Metric label="Saídas do mês" value={s.expenseCents} />
+        <Metric label="Resultado do mês" value={s.balanceCents} />
+        <Metric label="Programado neste mês" value={s.pendingCents} />
+      </section>
+      <Panel title="Suas carteiras">
+        <div className="wallet-grid">
+          {data.walletBalances
+            .filter((x) => x.active)
+            .map((x) => (
+              <article
+                className={`wallet-balance ${x.type === "CREDIT_CARD" ? "wallet-card" : ""}`}
+                key={x.id}
+              >
+                <span>
+                  {x.type === "CREDIT_CARD"
+                    ? "Cartão de crédito"
+                    : "Conta disponível"}
+                </span>
+                <h3>{x.name}</h3>
+                <strong
+                  className={x.balanceCents < 0 ? "negative" : "positive"}
+                >
+                  <Money value={x.balanceCents} />
+                </strong>
+                <small>
+                  {x.type === "CREDIT_CARD"
+                    ? x.balanceCents < 0
+                      ? "Saldo em aberto"
+                      : "Cartão quitado"
+                    : "Saldo acumulado"}
+                </small>
+              </article>
+            ))}
+        </div>
+      </Panel>
+      <div className="two-columns">
+        <Panel title="Últimos lançamentos">
+          <TxList rows={data.transactions.slice(0, 5)} />
+          <button
+            className="text-button"
+            onClick={() => setTab("transactions")}
+          >
+            Ver extrato completo
+          </button>
+        </Panel>
+        <Panel title="Programados deste mês">
+          {data.scheduled
+            .filter((x) => x.entry.status === "PENDING")
+            .slice(0, 5)
+            .map((x) => (
+              <div className="simple-row" key={x.entry.id}>
+                <div>
+                  <b>{x.entry.description}</b>
+                  <span>{x.categoryName ?? "Sem categoria"}</span>
+                </div>
+                <strong
+                  className={
+                    x.entry.expectedAmountCents < 0 ? "negative" : "positive"
+                  }
+                >
+                  <Money value={x.entry.expectedAmountCents} />
+                </strong>
+              </div>
+            ))}
+          {!data.scheduled.some((x) => x.entry.status === "PENDING") && (
+            <Empty />
+          )}
+        </Panel>
+      </div>
+      <Panel title="Cartões">
+        <div className="card-strip">
+          {data.cards.map((x) => (
+            <article className="credit-card" key={x.id}>
+              <span>{x.name}</span>
+              <small>Saldo em aberto</small>
+              <strong>
+                <Money value={x.outstandingCents} />
+              </strong>
+              <small>
+                Compras do mês: <Money value={x.invoiceCents} />
+              </small>
+            </article>
+          ))}
+          {!data.cards.length && (
+            <Empty text="Cadastre um cartão para acompanhar faturas." />
+          )}
+        </div>
+      </Panel>
+    </div>
+  );
 }
-function TxList({rows,onRemove,onEdit}:{rows:Tx[];onRemove?:(row:Tx)=>void;onEdit?:(row:Tx)=>void}){const[open,setOpen]=useState<string|null>(null);return rows.length?<div>{rows.map(x=><article className="tx-row" key={x.transaction.id}><span className={x.transaction.amountCents>=0?"in":"out"}>{x.transaction.amountCents>=0?"↗":"↘"}</span><div><b>{x.transaction.description}{x.transaction.installmentNumber?` · ${x.transaction.installmentNumber}/${x.transaction.installmentTotal}`:""}</b><small>{x.transaction.consumptionDate.split("-").reverse().join("/")} · {x.walletName}{x.categoryName?` · ${x.categoryName}`:""}</small></div><div><strong><Money value={x.transaction.amountCents}/></strong><small>{comp(x.transaction.competence)}</small></div>{onRemove&&<div className="row-menu"><button className="more-button" aria-label={`Ações para ${x.transaction.description}`} aria-expanded={open===x.transaction.id} onClick={()=>setOpen(open===x.transaction.id?null:x.transaction.id)}>•••</button>{open===x.transaction.id&&<div className="menu-popover">{onEdit&&!["CARD_PAYMENT","TRANSFER"].includes(x.transaction.type)&&<button onClick={()=>{setOpen(null);onEdit(x)}}>Editar</button>}<button className="menu-remove" onClick={()=>{setOpen(null);onRemove(x)}}>Remover</button></div>}</div>}</article>)}</div>:<Empty/>}
-function Manage({data,mutate}:{data:Data;mutate:(p:Record<string,unknown>)=>Promise<void>}){const[card,setCard]=useState(false);async function wallet(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);await mutate({action:"createWallet",name:f.get("name"),type:card?"CREDIT_CARD":"CASH_ACCOUNT",closingDay:card?+String(f.get("closing")):undefined,dueDay:card?+String(f.get("due")):undefined});e.currentTarget.reset()}async function category(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);await mutate({action:"createCategory",name:f.get("name"),type:f.get("type")});e.currentTarget.reset()}return <div className="two-columns"><Panel title="Carteiras"><form className="inline-form" onSubmit={wallet}><input name="name" required placeholder="Nome"/><select value={card?"card":"cash"} onChange={e=>setCard(e.target.value==="card")}><option value="cash">Conta normal</option><option value="card">Cartão</option></select>{card&&<><input name="closing" type="number" min="1" max="31" required placeholder="Fecha"/><input name="due" type="number" min="1" max="31" required placeholder="Vence"/></>}<button>Adicionar</button></form>{data.wallets.map(x=><ManageRow key={x.id} title={x.name} subtitle={x.type==="CREDIT_CARD"?`Cartão · fecha ${x.closingDay} · vence ${x.dueDay}`:"Conta normal"} active={x.active} action={()=>mutate({action:"updateWallet",id:x.id,active:!x.active})}/>)}</Panel><Panel title="Categorias"><form className="inline-form" onSubmit={category}><input name="name" required placeholder="Nome"/><select name="type"><option value="BOTH">Entrada e saída</option><option value="EXPENSE">Saída</option><option value="INCOME">Entrada</option></select><button>Adicionar</button></form>{data.categories.map(x=><ManageRow key={x.id} title={x.name} subtitle={x.type} active={x.active} action={()=>mutate({action:"updateCategory",id:x.id,active:!x.active})}/>)}</Panel></div>}
-function ManageRow({title,subtitle,active,action}:{title:string;subtitle:string;active:boolean;action:()=>void}){return <div className="simple-row"><div><b>{title}</b><span>{subtitle}</span></div><button className="text-button" onClick={action}>{active?"Desativar":"Reativar"}</button></div>}
-function Schedules({rows,wallets,categories,competence,mutate}:{rows:Scheduled[];wallets:Wallet[];categories:Category[];competence:string;mutate:(p:Record<string,unknown>)=>Promise<void>}){const[deleting,setDeleting]=useState<Scheduled|null>(null),[billing,setBilling]=useState<Scheduled|null>(null);const notify=useNotifications();async function create(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);try{await mutate({action:"createSchedule",description:f.get("description"),amountCents:parseMoneyToCents(String(f.get("amount"))),type:f.get("type"),categoryId:f.get("categoryId")||undefined,startCompetence:`${f.get("start")}-01`,endCompetence:f.get("end")?`${f.get("end")}-01`:undefined});e.currentTarget.reset()}catch{}}function openBill(x:Scheduled){if(!wallets.length){notify("error","Cadastre uma carteira antes de faturar um programado.");return}setBilling(x)}async function bill(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!billing)return;const f=new FormData(e.currentTarget);try{await mutate({action:"billSchedule",id:billing.entry.id,walletId:f.get("walletId"),amountCents:parseMoneyToCents(String(f.get("amount"))),consumptionDate:f.get("date")});setBilling(null)}catch{}}return <><div className="page-stack"><Panel title="Novo valor mensal"><form className="inline-form" onSubmit={create}><input name="description" required placeholder="Descrição"/><input name="amount" required placeholder="Valor"/><select name="type"><option value="EXPENSE">Saída</option><option value="INCOME">Entrada</option></select><select name="categoryId"><option value="">Sem categoria</option>{categories.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select><input name="start" type="month" defaultValue={competence.slice(0,7)} required/><input name="end" type="month"/><button>Criar</button></form></Panel><Panel title={`Pendentes · ${comp(competence)}`}>{rows.filter(x=>x.entry.status==="PENDING").map(x=><div className="simple-row scheduled-item" key={x.entry.id}><div><b>{x.entry.description}</b><span>{x.categoryName??"Sem categoria"}</span></div><strong className={x.entry.expectedAmountCents<0?"negative":"positive"}>{fmt(x.entry.expectedAmountCents)}</strong><div className="scheduled-actions"><button className="small-button" onClick={()=>openBill(x)}>Faturar</button><button className="text-button" onClick={()=>void mutate({action:"skipSchedule",id:x.entry.id}).catch(()=>undefined)}>Ignorar este mês</button><button className="delete-rule-button" onClick={()=>setDeleting(x)}>Excluir recorrência</button></div></div>)}</Panel></div>{billing&&<div className="modal-backdrop" role="presentation" onMouseDown={()=>setBilling(null)}><form className="confirm-modal billing-modal" onSubmit={bill} onMouseDown={e=>e.stopPropagation()} aria-labelledby="billing-title"><p className="eyebrow">FATURAR PROGRAMADO</p><h2 id="billing-title">{billing.entry.description}</h2><p>Confirme os dados reais antes de inserir este item no extrato.</p><Field label="Carteira"><select name="walletId" required>{wallets.map(wallet=><option value={wallet.id} key={wallet.id}>{wallet.name}</option>)}</select></Field><div className="form-grid"><Field label="Valor real"><input name="amount" inputMode="decimal" defaultValue={(Math.abs(billing.entry.expectedAmountCents)/100).toFixed(2).replace(".",",")} required/></Field><Field label="Data real"><input name="date" type="date" defaultValue={today} required/></Field></div><div className="confirm-actions"><button type="button" className="cancel-button" onClick={()=>setBilling(null)}>Cancelar</button><button className="action-button modal-save">Confirmar faturamento</button></div></form></div>}{deleting&&<div className="modal-backdrop" role="presentation" onMouseDown={()=>setDeleting(null)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-rule-title" onMouseDown={e=>e.stopPropagation()}><span className="warning-icon" aria-hidden="true">!</span><p className="eyebrow">EXCLUIR RECORRÊNCIA</p><h2 id="delete-rule-title">Parar “{deleting.entry.description}”?</h2><p>Todos os meses ainda pendentes desta recorrência serão cancelados. Lançamentos que já foram faturados continuarão no extrato.</p><div className="confirm-actions"><button className="cancel-button" onClick={()=>setDeleting(null)}>Cancelar</button><button className="danger-button" onClick={()=>void mutate({action:"deleteScheduleRule",id:deleting.entry.scheduledRuleId}).catch(()=>undefined)}>Excluir recorrência</button></div></section></div>}</>}
-function Cards({data,wallets,competence,mutate}:{data:Data;wallets:Wallet[];competence:string;mutate:(p:Record<string,unknown>)=>Promise<void>}){const[id,setId]=useState(data.cards[0]?.id??"");const card=data.cards.find(x=>x.id===id);async function pay(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);await mutate({action:"payCard",cardId:id,sourceWalletId:f.get("source"),amountCents:parseMoneyToCents(String(f.get("amount"))),date:f.get("date"),competence})}if(!data.cards.length)return <Empty text="Cadastre um cartão em Carteiras."/>;return <div className="two-columns cards-layout"><Panel title="Fatura da competência"><Field label="Cartão"><select value={id} onChange={e=>setId(e.target.value)}>{data.cards.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></Field><div className="invoice-summary"><span>Compras em {comp(competence)}</span><h3 className="invoice"><Money value={card?.invoiceCents??0}/></h3><small>Saldo total em aberto: <b><Money value={card?.outstandingCents??0}/></b></small></div><TxList rows={data.transactions.filter(x=>x.transaction.walletId===id&&x.transaction.purchaseId)}/></Panel><Panel title="Pagar cartão"><p className="muted">O saldo negativo continua nos próximos meses até você registrar o pagamento.</p><form onSubmit={pay}><Field label="Conta de origem"><select name="source">{wallets.filter(x=>x.type==="CASH_ACCOUNT").map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></Field><Field label="Valor"><input key={`${id}-${card?.outstandingCents}`} name="amount" defaultValue={((card?.outstandingCents??0)/100).toFixed(2).replace(".",",")} required/></Field><Field label="Data"><input name="date" type="date" defaultValue={today}/></Field><button className="action-button">Registrar pagamento</button></form></Panel></div>}
-function Money({value,prefix=""}:{value:number;prefix?:string}){const visible=useContext(BalanceVisibilityContext);return <span className="money-value" aria-label={visible?fmt(value):"Valor oculto"}>{visible?`${prefix}${fmt(value)}`:"••••••"}</span>}
-function InfoTip({text}:{text:string}){return <details className="info-tip"><summary aria-label="Mais informações">i</summary><span role="tooltip">{text}</span></details>}
-function Panel({title,children}:{title:string;children:React.ReactNode}){return <section className="panel"><p className="eyebrow">VISÃO FINANCEIRA</p><h2>{title}</h2>{children}</section>}function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>}function Empty({text="Nenhum item nesta competência."}:{text?:string}){return <div className="empty">○<p>{text}</p></div>}
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <article className="metric">
+      <div className="label-with-info">
+        <span>{label}</span>
+        <InfoTip text="Valor referente somente à competência selecionada." />
+      </div>
+      <strong className={value < 0 ? "negative" : ""}>
+        <Money value={value} />
+      </strong>
+    </article>
+  );
+}
+function New({
+  wallets,
+  categories,
+  mutate,
+  done,
+}: {
+  wallets: Wallet[];
+  categories: Category[];
+  mutate: (p: Record<string, unknown>) => Promise<void>;
+  done: () => void;
+}) {
+  const [wid, setWid] = useState(wallets[0]?.id ?? ""),
+    [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE"),
+    [mode, setMode] = useState<"CASH" | "INSTALLMENT_VALUE" | "TOTAL_VALUE">(
+      "CASH",
+    ),
+    [amount, setAmount] = useState(""),
+    [qty, setQty] = useState(2),
+    [date, setDate] = useState(today),
+    [override, setOverride] = useState(""),
+    [error, setError] = useState(""),
+    [categoryOpen, setCategoryOpen] = useState(false);
+  const wallet = wallets.find((x) => x.id === wid);
+  const initial = wallet
+    ? calculateCompetence(wallet.type, date, wallet.closingDay)
+    : current;
+  const preview = useMemo(() => {
+    try {
+      return mode === "CASH" || !amount
+        ? []
+        : calculateInstallments(mode, parseMoneyToCents(amount), qty).map(
+            (v, i) => ({
+              v,
+              c: calculateInstallmentCompetences(
+                override ? `${override}-01` : initial,
+                qty,
+              )[i],
+            }),
+          );
+    } catch {
+      return [];
+    }
+  }, [mode, amount, qty, override, initial]);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    try {
+      await mutate({
+        action: "createPurchase",
+        description: f.get("description"),
+        amountCents: parseMoneyToCents(amount),
+        type: kind,
+        walletId: wid,
+        categoryId: f.get("categoryId") || undefined,
+        consumptionDate: date,
+        competence: override ? `${override}-01` : undefined,
+        mode,
+        quantity: mode === "CASH" ? undefined : qty,
+      });
+      done();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar.");
+    }
+  }
+  async function createCategory(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    try {
+      await mutate({
+        action: "createCategory",
+        name: f.get("name"),
+        type: f.get("type"),
+      });
+      setCategoryOpen(false);
+    } catch {}
+  }
+  if (!wallets.length) return <Empty text="Cadastre primeiro uma carteira." />;
+  return (
+    <>
+      <form className="panel form-panel" onSubmit={submit}>
+        <div className="segmented">
+          <button
+            type="button"
+            className={kind === "EXPENSE" ? "active" : ""}
+            onClick={() => setKind("EXPENSE")}
+          >
+            Saída
+          </button>
+          <button
+            type="button"
+            className={kind === "INCOME" ? "active" : ""}
+            onClick={() => setKind("INCOME")}
+          >
+            Entrada
+          </button>
+        </div>
+        <div className="form-grid">
+          <Field label="Descrição">
+            <input name="description" required placeholder="Ex.: Mercado" />
+          </Field>
+          <Field label="Valor">
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              required
+              placeholder="0,00"
+            />
+          </Field>
+          <Field label="Carteira">
+            <select value={wid} onChange={(e) => setWid(e.target.value)}>
+              {wallets.map((x) => (
+                <option value={x.id} key={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Categoria">
+            <div className="select-with-action">
+              <select name="categoryId">
+                <option value="">Sem categoria</option>
+                {categories.map((x) => (
+                  <option value={x.id} key={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setCategoryOpen(true)}
+                aria-label="Criar uma categoria"
+              >
+                ＋
+              </button>
+            </div>
+          </Field>
+          <Field label="Data de consumo">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </Field>
+          <Field label="Forma">
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as typeof mode)}
+            >
+              <option value="CASH">À vista</option>
+              <option value="INSTALLMENT_VALUE">Valor da parcela</option>
+              <option value="TOTAL_VALUE">Valor total</option>
+            </select>
+          </Field>
+          {mode !== "CASH" && (
+            <Field label="Parcelas">
+              <input
+                type="number"
+                min="2"
+                max="120"
+                value={qty}
+                onChange={(e) => setQty(+e.target.value)}
+              />
+            </Field>
+          )}
+          <Field label="Competência manual (opcional)">
+            <input
+              type="month"
+              value={override}
+              onChange={(e) => setOverride(e.target.value)}
+            />
+          </Field>
+        </div>
+        <p className="competence-note">
+          Competência considerada:{" "}
+          <b>{comp(override ? `${override}-01` : initial)}</b>
+        </p>
+        {preview.length > 0 && (
+          <div className="preview">
+            {preview.map((x, i) => (
+              <span key={i}>
+                {i + 1}/{preview.length} <b>{fmt(x.v)}</b>{" "}
+                <small>{comp(x.c)}</small>
+              </span>
+            ))}
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+        <button className="action-button">Salvar lançamento</button>
+      </form>
+      {categoryOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setCategoryOpen(false)}
+        >
+          <form
+            className="confirm-modal edit-modal category-modal"
+            onSubmit={createCategory}
+            onMouseDown={(e) => e.stopPropagation()}
+            aria-labelledby="category-title"
+          >
+            <p className="eyebrow">NOVA CATEGORIA</p>
+            <h2 id="category-title">Adicionar categoria</h2>
+            <Field label="Nome">
+              <input name="name" required autoFocus maxLength={60} />
+            </Field>
+            <Field label="Uso">
+              <select
+                name="type"
+                defaultValue={kind === "EXPENSE" ? "EXPENSE" : "INCOME"}
+              >
+                <option value="EXPENSE">Saídas</option>
+                <option value="INCOME">Entradas</option>
+                <option value="BOTH">Entradas e saídas</option>
+              </select>
+            </Field>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setCategoryOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button className="action-button modal-save">
+                Criar categoria
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+// Mantido temporariamente para compatibilidade com o editor individual durante a migração do extrato.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function Statement({ rows }: { rows: Tx[] }) {
+  const [q, setQ] = useState(""),
+    [removing, setRemoving] = useState<Tx | null>(null),
+    [editing, setEditing] = useState<Tx | null>(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const notify = useNotifications();
+  const walletOptions = Array.from(
+    new Map(
+      rows.map((row) => [row.transaction.walletId, row.walletName]),
+    ).entries(),
+  );
+  async function request(payload: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/finance", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+        j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      notify(
+        "success",
+        payload.action === "removeTransaction"
+          ? "Lançamento removido do extrato."
+          : "Lançamento atualizado.",
+      );
+      window.setTimeout(() => window.location.reload(), 650);
+    } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : "Não foi possível concluir a operação.";
+      setError(message);
+      notify("error", message);
+      setBusy(false);
+    }
+  }
+  function close() {
+    if (!busy) {
+      setRemoving(null);
+      setEditing(null);
+      setError("");
+    }
+  }
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editing) return;
+    const f = new FormData(e.currentTarget);
+    await request({
+      action: "updateTransaction",
+      id: editing.transaction.id,
+      description: f.get("description"),
+      walletId: f.get("walletId"),
+      consumptionDate: f.get("consumptionDate"),
+      competence: `${f.get("competence")}-01`,
+      type: f.get("type"),
+    });
+  }
+  return (
+    <>
+      <Panel title="Extrato confirmado">
+        <input
+          className="search"
+          placeholder="Buscar descrição…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <TxList
+          rows={rows.filter((x) =>
+            x.transaction.description.toLowerCase().includes(q.toLowerCase()),
+          )}
+          onRemove={setRemoving}
+          onEdit={setEditing}
+        />
+      </Panel>
+      {removing && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={close}>
+          <section
+            className="confirm-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="remove-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <span className="warning-icon" aria-hidden="true">
+              !
+            </span>
+            <p className="eyebrow">CONFIRMAR EXCLUSÃO</p>
+            <h2 id="remove-title">Remover do extrato?</h2>
+            <p>
+              O lançamento <strong>{removing.transaction.description}</strong>,
+              no valor de{" "}
+              <strong>{fmt(removing.transaction.amountCents)}</strong>, deixará
+              de aparecer no extrato e nos totais.
+            </p>
+            {removing.transaction.type === "CARD_PAYMENT" && (
+              <p className="modal-note">
+                As duas movimentações vinculadas serão removidas juntas.
+              </p>
+            )}
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="confirm-actions">
+              <button className="cancel-button" disabled={busy} onClick={close}>
+                Cancelar
+              </button>
+              <button
+                className="danger-button"
+                disabled={busy}
+                onClick={() =>
+                  void request({
+                    action: "removeTransaction",
+                    id: removing.transaction.id,
+                  })
+                }
+              >
+                {busy ? (
+                  <LoadingState label="Removendo lançamento…" />
+                ) : (
+                  "Sim, remover"
+                )}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {editing && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={close}>
+          <form
+            className="confirm-modal edit-modal"
+            onSubmit={save}
+            onMouseDown={(e) => e.stopPropagation()}
+            aria-labelledby="edit-title"
+          >
+            <p className="eyebrow">EDITAR LANÇAMENTO</p>
+            <h2 id="edit-title">Ajustar movimentação</h2>
+            <Field label="Descrição">
+              <input
+                name="description"
+                defaultValue={editing.transaction.description}
+                maxLength={120}
+                required
+              />
+            </Field>
+            <Field label="Carteira">
+              <select
+                name="walletId"
+                defaultValue={editing.transaction.walletId}
+              >
+                {walletOptions.map(([id, name]) => (
+                  <option value={id} key={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="form-grid">
+              <Field label="Data">
+                <input
+                  name="consumptionDate"
+                  type="date"
+                  defaultValue={editing.transaction.consumptionDate}
+                  required
+                />
+              </Field>
+              <Field label="Competência">
+                <input
+                  name="competence"
+                  type="month"
+                  defaultValue={editing.transaction.competence.slice(0, 7)}
+                  required
+                />
+              </Field>
+            </div>
+            <Field label="Tipo">
+              <select
+                name="type"
+                defaultValue={
+                  editing.transaction.amountCents < 0 ? "EXPENSE" : "INCOME"
+                }
+              >
+                <option value="EXPENSE">Saída</option>
+                <option value="INCOME">Entrada</option>
+              </select>
+            </Field>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                disabled={busy}
+                onClick={close}
+              >
+                Cancelar
+              </button>
+              <button className="action-button modal-save" disabled={busy}>
+                {busy ? (
+                  <LoadingState label="Salvando alterações…" />
+                ) : (
+                  "Salvar alterações"
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+function TxList({
+  rows,
+  onRemove,
+  onEdit,
+}: {
+  rows: Tx[];
+  onRemove?: (row: Tx) => void;
+  onEdit?: (row: Tx) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  return rows.length ? (
+    <div>
+      {rows.map((x) => (
+        <article className="tx-row" key={x.transaction.id}>
+          <span className={x.transaction.amountCents >= 0 ? "in" : "out"}>
+            {x.transaction.amountCents >= 0 ? "↗" : "↘"}
+          </span>
+          <div>
+            <b>
+              {x.transaction.description}
+              {x.transaction.installmentNumber
+                ? ` · ${x.transaction.installmentNumber}/${x.transaction.installmentTotal}`
+                : ""}
+            </b>
+            <small>
+              {x.transaction.consumptionDate.split("-").reverse().join("/")} ·{" "}
+              {x.walletName}
+              {x.categoryName ? ` · ${x.categoryName}` : ""}
+            </small>
+          </div>
+          <div>
+            <strong>
+              <Money value={x.transaction.amountCents} />
+            </strong>
+            <small>{comp(x.transaction.competence)}</small>
+          </div>
+          {onRemove && (
+            <div className="row-menu">
+              <button
+                className="more-button"
+                aria-label={`Ações para ${x.transaction.description}`}
+                aria-expanded={open === x.transaction.id}
+                onClick={() =>
+                  setOpen(open === x.transaction.id ? null : x.transaction.id)
+                }
+              >
+                •••
+              </button>
+              {open === x.transaction.id && (
+                <div className="menu-popover">
+                  {onEdit &&
+                    !["CARD_PAYMENT", "TRANSFER"].includes(
+                      x.transaction.type,
+                    ) && (
+                      <button
+                        onClick={() => {
+                          setOpen(null);
+                          onEdit(x);
+                        }}
+                      >
+                        Editar
+                      </button>
+                    )}
+                  <button
+                    className="menu-remove"
+                    onClick={() => {
+                      setOpen(null);
+                      onRemove(x);
+                    }}
+                  >
+                    Remover
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  ) : (
+    <Empty />
+  );
+}
+function Manage({
+  data,
+  mutate,
+}: {
+  data: Data;
+  mutate: (p: Record<string, unknown>) => Promise<void>;
+}) {
+  const [card, setCard] = useState(false);
+  async function wallet(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await mutate({
+      action: "createWallet",
+      name: f.get("name"),
+      type: card ? "CREDIT_CARD" : "CASH_ACCOUNT",
+      closingDay: card ? +String(f.get("closing")) : undefined,
+      dueDay: card ? +String(f.get("due")) : undefined,
+      initialBalanceCents: f.get("initialBalance")
+        ? parseMoneyToCents(String(f.get("initialBalance"))) *
+          (f.get("initialKind") === "DEBT" ? -1 : 1)
+        : 0,
+    });
+    e.currentTarget.reset();
+  }
+  async function adjust(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await mutate({
+      action: "adjustWallet",
+      walletId: f.get("walletId"),
+      amountCents:
+        parseMoneyToCents(String(f.get("amount"))) *
+        (f.get("direction") === "REMOVE" ? -1 : 1),
+      description: f.get("description") || "Ajuste de saldo",
+      date: f.get("date"),
+    });
+    e.currentTarget.reset();
+  }
+  async function category(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await mutate({
+      action: "createCategory",
+      name: f.get("name"),
+      type: f.get("type"),
+    });
+    e.currentTarget.reset();
+  }
+  return (
+    <div className="two-columns">
+      <Panel title="Carteiras">
+        <form className="inline-form" onSubmit={wallet}>
+          <input name="name" required placeholder="Nome" />
+          <select
+            value={card ? "card" : "cash"}
+            onChange={(e) => setCard(e.target.value === "card")}
+          >
+            <option value="cash">Conta normal</option>
+            <option value="card">Cartão</option>
+          </select>
+          <input
+            name="initialBalance"
+            inputMode="decimal"
+            placeholder="Saldo inicial (opcional)"
+          />
+          <select name="initialKind">
+            <option value="BALANCE">Saldo positivo</option>
+            <option value="DEBT">Saldo devedor</option>
+          </select>
+          {card && (
+            <>
+              <input
+                name="closing"
+                type="number"
+                min="1"
+                max="31"
+                required
+                placeholder="Fecha"
+              />
+              <input
+                name="due"
+                type="number"
+                min="1"
+                max="31"
+                required
+                placeholder="Vence"
+              />
+            </>
+          )}
+          <button>Adicionar</button>
+        </form>
+        <h3 className="form-subtitle">Ajuste auditável</h3>
+        <form className="inline-form" onSubmit={adjust}>
+          <select name="walletId" required>
+            {data.wallets
+              .filter((x) => x.active)
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+          </select>
+          <input
+            name="amount"
+            inputMode="decimal"
+            placeholder="Valor"
+            required
+          />
+          <select name="direction">
+            <option value="ADD">Adicionar saldo</option>
+            <option value="REMOVE">Remover saldo</option>
+          </select>
+          <input name="description" placeholder="Motivo do ajuste" />
+          <input name="date" type="date" defaultValue={today} required />
+          <button>Ajustar saldo</button>
+        </form>
+        {data.wallets.map((x) => (
+          <ManageRow
+            key={x.id}
+            title={x.name}
+            subtitle={
+              x.type === "CREDIT_CARD"
+                ? `Cartão · fecha ${x.closingDay} · vence ${x.dueDay}`
+                : "Conta normal"
+            }
+            active={x.active}
+            action={() =>
+              mutate({ action: "updateWallet", id: x.id, active: !x.active })
+            }
+          />
+        ))}
+      </Panel>
+      <Panel title="Categorias">
+        <form className="inline-form" onSubmit={category}>
+          <input name="name" required placeholder="Nome" />
+          <select name="type">
+            <option value="BOTH">Entrada e saída</option>
+            <option value="EXPENSE">Saída</option>
+            <option value="INCOME">Entrada</option>
+          </select>
+          <button>Adicionar</button>
+        </form>
+        {data.categories.map((x) => (
+          <ManageRow
+            key={x.id}
+            title={x.name}
+            subtitle={x.type}
+            active={x.active}
+            action={() =>
+              mutate({ action: "updateCategory", id: x.id, active: !x.active })
+            }
+          />
+        ))}
+      </Panel>
+    </div>
+  );
+}
+function ManageRow({
+  title,
+  subtitle,
+  active,
+  action,
+}: {
+  title: string;
+  subtitle: string;
+  active: boolean;
+  action: () => void;
+}) {
+  return (
+    <div className="simple-row">
+      <div>
+        <b>{title}</b>
+        <span>{subtitle}</span>
+      </div>
+      <button className="text-button" onClick={action}>
+        {active ? "Desativar" : "Reativar"}
+      </button>
+    </div>
+  );
+}
+function Schedules({
+  rows,
+  wallets,
+  categories,
+  competence,
+  mutate,
+}: {
+  rows: Scheduled[];
+  wallets: Wallet[];
+  categories: Category[];
+  competence: string;
+  mutate: (p: Record<string, unknown>) => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState<Scheduled | null>(null),
+    [billing, setBilling] = useState<Scheduled | null>(null);
+  const notify = useNotifications();
+  async function create(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    try {
+      await mutate({
+        action: "createSchedule",
+        description: f.get("description"),
+        amountCents: parseMoneyToCents(String(f.get("amount"))),
+        type: f.get("type"),
+        categoryId: f.get("categoryId") || undefined,
+        walletId: f.get("walletId") || undefined,
+        startCompetence: `${f.get("start")}-01`,
+        endCompetence: f.get("end") ? `${f.get("end")}-01` : undefined,
+      });
+      e.currentTarget.reset();
+    } catch {}
+  }
+  function openBill(x: Scheduled) {
+    if (!wallets.length) {
+      notify("error", "Cadastre uma carteira antes de faturar um programado.");
+      return;
+    }
+    setBilling(x);
+  }
+  async function bill(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!billing) return;
+    const f = new FormData(e.currentTarget);
+    try {
+      await mutate({
+        action: "billSchedule",
+        id: billing.entry.id,
+        walletId: f.get("walletId"),
+        amountCents: parseMoneyToCents(String(f.get("amount"))),
+        consumptionDate: f.get("date"),
+      });
+      setBilling(null);
+    } catch {}
+  }
+  return (
+    <>
+      <div className="page-stack">
+        <Panel title="Novo valor mensal">
+          <form className="inline-form" onSubmit={create}>
+            <input name="description" required placeholder="Descrição" />
+            <input name="amount" required placeholder="Valor" />
+            <select name="type">
+              <option value="EXPENSE">Saída</option>
+              <option value="INCOME">Entrada</option>
+            </select>
+            <select name="categoryId">
+              <option value="">Sem categoria</option>
+              {categories.map((x) => (
+                <option value={x.id} key={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+            <select name="walletId">
+              <option value="">Carteira ao faturar</option>
+              {wallets.map((wallet) => (
+                <option value={wallet.id} key={wallet.id}>
+                  {wallet.name}
+                </option>
+              ))}
+            </select>
+            <input
+              name="start"
+              type="month"
+              defaultValue={competence.slice(0, 7)}
+              required
+            />
+            <input name="end" type="month" />
+            <button>Criar</button>
+          </form>
+        </Panel>
+        <Panel title={`Pendentes · ${comp(competence)}`}>
+          {rows
+            .filter((x) => x.entry.status === "PENDING")
+            .map((x) => (
+              <div className="simple-row scheduled-item" key={x.entry.id}>
+                <div>
+                  <b>{x.entry.description}</b>
+                  <span>{x.categoryName ?? "Sem categoria"}</span>
+                </div>
+                <strong
+                  className={
+                    x.entry.expectedAmountCents < 0 ? "negative" : "positive"
+                  }
+                >
+                  {fmt(x.entry.expectedAmountCents)}
+                </strong>
+                <div className="scheduled-actions">
+                  <button className="small-button" onClick={() => openBill(x)}>
+                    Faturar
+                  </button>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      void mutate({
+                        action: "skipSchedule",
+                        id: x.entry.id,
+                      }).catch(() => undefined)
+                    }
+                  >
+                    Ignorar este mês
+                  </button>
+                  <button
+                    className="delete-rule-button"
+                    onClick={() => setDeleting(x)}
+                  >
+                    Excluir recorrência
+                  </button>
+                </div>
+              </div>
+            ))}
+        </Panel>
+      </div>
+      {billing && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setBilling(null)}
+        >
+          <form
+            className="confirm-modal billing-modal"
+            onSubmit={bill}
+            onMouseDown={(e) => e.stopPropagation()}
+            aria-labelledby="billing-title"
+          >
+            <p className="eyebrow">FATURAR PROGRAMADO</p>
+            <h2 id="billing-title">{billing.entry.description}</h2>
+            <p>
+              Confirme os dados reais antes de inserir este item no extrato.
+            </p>
+            <Field label="Carteira">
+              <select
+                name="walletId"
+                defaultValue={billing.defaultWalletId ?? wallets[0]?.id}
+                required
+              >
+                {wallets.map((wallet) => (
+                  <option value={wallet.id} key={wallet.id}>
+                    {wallet.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="form-grid">
+              <Field label="Valor real">
+                <input
+                  name="amount"
+                  inputMode="decimal"
+                  defaultValue={(
+                    Math.abs(billing.entry.expectedAmountCents) / 100
+                  )
+                    .toFixed(2)
+                    .replace(".", ",")}
+                  required
+                />
+              </Field>
+              <Field label="Data real">
+                <input name="date" type="date" defaultValue={today} required />
+              </Field>
+            </div>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setBilling(null)}
+              >
+                Cancelar
+              </button>
+              <button className="action-button modal-save">
+                Confirmar faturamento
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {deleting && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setDeleting(null)}
+        >
+          <section
+            className="confirm-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-rule-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <span className="warning-icon" aria-hidden="true">
+              !
+            </span>
+            <p className="eyebrow">EXCLUIR RECORRÊNCIA</p>
+            <h2 id="delete-rule-title">
+              Parar “{deleting.entry.description}”?
+            </h2>
+            <p>
+              Todos os meses ainda pendentes desta recorrência serão cancelados.
+              Lançamentos que já foram faturados continuarão no extrato.
+            </p>
+            <div className="confirm-actions">
+              <button
+                className="cancel-button"
+                onClick={() => setDeleting(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="danger-button"
+                onClick={() =>
+                  void mutate({
+                    action: "deleteScheduleRule",
+                    id: deleting.entry.scheduledRuleId,
+                  }).catch(() => undefined)
+                }
+              >
+                Excluir recorrência
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+function Cards({
+  data,
+  wallets,
+  competence,
+  mutate,
+}: {
+  data: Data;
+  wallets: Wallet[];
+  competence: string;
+  mutate: (p: Record<string, unknown>) => Promise<void>;
+}) {
+  const [id, setId] = useState(data.cards[0]?.id ?? "");
+  const card = data.cards.find((x) => x.id === id);
+  async function pay(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await mutate({
+      action: "payCard",
+      cardId: id,
+      sourceWalletId: f.get("source"),
+      amountCents: parseMoneyToCents(String(f.get("amount"))),
+      date: f.get("date"),
+      competence,
+    });
+  }
+  if (!data.cards.length)
+    return <Empty text="Cadastre um cartão em Carteiras." />;
+  return (
+    <div className="two-columns cards-layout">
+      <Panel title="Fatura da competência">
+        <Field label="Cartão">
+          <select value={id} onChange={(e) => setId(e.target.value)}>
+            {data.cards.map((x) => (
+              <option value={x.id} key={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="invoice-summary">
+          <span>Compras em {comp(competence)}</span>
+          <h3 className="invoice">
+            <Money value={card?.invoiceCents ?? 0} />
+          </h3>
+          <small>
+            Saldo total em aberto:{" "}
+            <b>
+              <Money value={card?.outstandingCents ?? 0} />
+            </b>
+          </small>
+        </div>
+        <TxList
+          rows={data.transactions.filter(
+            (x) => x.transaction.walletId === id && x.transaction.purchaseId,
+          )}
+        />
+      </Panel>
+      <Panel title="Pagar cartão">
+        <p className="muted">
+          O saldo negativo continua nos próximos meses até você registrar o
+          pagamento.
+        </p>
+        <form onSubmit={pay}>
+          <Field label="Conta de origem">
+            <select name="source">
+              {wallets
+                .filter((x) => x.type === "CASH_ACCOUNT")
+                .map((x) => (
+                  <option value={x.id} key={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <Field label="Valor">
+            <input
+              key={`${id}-${card?.outstandingCents}`}
+              name="amount"
+              defaultValue={((card?.outstandingCents ?? 0) / 100)
+                .toFixed(2)
+                .replace(".", ",")}
+              required
+            />
+          </Field>
+          <Field label="Data">
+            <input name="date" type="date" defaultValue={today} />
+          </Field>
+          <button className="action-button">Registrar pagamento</button>
+        </form>
+      </Panel>
+    </div>
+  );
+}
+function Money({ value, prefix = "" }: { value: number; prefix?: string }) {
+  const visible = useContext(BalanceVisibilityContext);
+  return (
+    <span
+      className="money-value"
+      aria-label={visible ? fmt(value) : "Valor oculto"}
+    >
+      {visible ? `${prefix}${fmt(value)}` : "••••••"}
+    </span>
+  );
+}
+function InfoTip({ text }: { text: string }) {
+  return (
+    <details className="info-tip">
+      <summary aria-label="Mais informações">i</summary>
+      <span role="tooltip">{text}</span>
+    </details>
+  );
+}
+function Panel({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="panel">
+      <p className="eyebrow">VISÃO FINANCEIRA</p>
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+function Empty({ text = "Nenhum item nesta competência." }: { text?: string }) {
+  return (
+    <div className="empty">
+      ○<p>{text}</p>
+    </div>
+  );
+}
