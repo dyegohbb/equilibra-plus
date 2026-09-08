@@ -13,7 +13,7 @@ import { SignOutButton } from "@/components/auth/sign-out-button";
 import { LoadingState } from "@/components/ui/spinner";
 import { useNotifications } from "@/components/ui/notifications";
 import {
-  calculateCompetence,
+  addMonths,
   calculateInstallmentCompetences,
   calculateInstallments,
   parseMoneyToCents,
@@ -110,6 +110,7 @@ const today = new Date().toLocaleDateString("en-CA", {
   timeZone: "America/Recife",
 });
 const current = `${today.slice(0, 7)}-01`;
+const nextMonth = addMonths(current, 1).slice(0, 7);
 const comp = (v: string) => `${v.slice(5, 7)}/${v.slice(0, 4)}`;
 const fmt = (v: number) => brl.format(v / 100);
 const BalanceVisibilityContext = createContext(false);
@@ -613,13 +614,9 @@ function New({
     [amount, setAmount] = useState(""),
     [qty, setQty] = useState(2),
     [date, setDate] = useState(today),
-    [override, setOverride] = useState(""),
+    [purchaseCompetence, setPurchaseCompetence] = useState(nextMonth),
     [error, setError] = useState(""),
     [categoryOpen, setCategoryOpen] = useState(false);
-  const wallet = wallets.find((x) => x.id === wid);
-  const initial = wallet
-    ? calculateCompetence(wallet.type, date, wallet.closingDay)
-    : current;
   const preview = useMemo(() => {
     try {
       return mode === "CASH" || !amount
@@ -628,7 +625,7 @@ function New({
             (v, i) => ({
               v,
               c: calculateInstallmentCompetences(
-                override ? `${override}-01` : initial,
+                `${purchaseCompetence}-01`,
                 qty,
               )[i],
             }),
@@ -636,7 +633,7 @@ function New({
     } catch {
       return [];
     }
-  }, [mode, amount, qty, override, initial]);
+  }, [mode, amount, qty, purchaseCompetence]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -649,7 +646,7 @@ function New({
         walletId: wid,
         categoryId: f.get("categoryId") || undefined,
         consumptionDate: date,
-        competence: override ? `${override}-01` : undefined,
+        competence: `${purchaseCompetence}-01`,
         mode,
         quantity: mode === "CASH" ? undefined : qty,
       });
@@ -759,18 +756,15 @@ function New({
               />
             </Field>
           )}
-          <Field label="Competência manual (opcional)">
+          <Field label="Competência">
             <input
               type="month"
-              value={override}
-              onChange={(e) => setOverride(e.target.value)}
+              value={purchaseCompetence}
+              onChange={(e) => setPurchaseCompetence(e.target.value)}
+              required
             />
           </Field>
         </div>
-        <p className="competence-note">
-          Competência considerada:{" "}
-          <b>{comp(override ? `${override}-01` : initial)}</b>
-        </p>
         {preview.length > 0 && (
           <div className="preview">
             {preview.map((x, i) => (

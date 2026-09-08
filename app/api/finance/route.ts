@@ -21,6 +21,7 @@ import {
 export const dynamic = "force-dynamic";
 const id = postgresUuid;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const competenceDate = z.string().regex(/^\d{4}-\d{2}-01$/);
 const money = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 async function userId() {
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
             walletId: id,
             categoryId: id.optional(),
             consumptionDate: date,
-            competence: date.optional(),
+            competence: competenceDate,
             mode: z.enum(["CASH", "INSTALLMENT_VALUE", "TOTAL_VALUE"]),
             quantity: z.number().int().min(2).max(120).optional(),
           })
