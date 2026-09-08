@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getSession } from "@/lib/auth/server";
+import { postgresUuid, zodErrorResponse } from "@/lib/api-validation";
 import {
   adjustWalletBalance,
   billScheduledEntry,
@@ -18,7 +19,7 @@ import {
 } from "@/modules/finance/service";
 
 export const dynamic = "force-dynamic";
-const id = z.string().uuid();
+const id = postgresUuid;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const money = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
@@ -225,11 +226,7 @@ export async function POST(request: Request) {
 
 function apiError(error: unknown) {
   if (error instanceof Response) return error;
-  if (error instanceof z.ZodError)
-    return Response.json(
-      { error: "Verifique os dados informados." },
-      { status: 422 },
-    );
+  if (error instanceof z.ZodError) return zodErrorResponse(error);
   console.error(
     "Finance operation failed",
     error instanceof Error ? error.message : "unknown",

@@ -527,6 +527,7 @@ export async function createScheduledRule(
     throw new Error("Programado inválido.");
   const end = input.endCompetence || addMonths(input.startCompetence, 119);
   if (input.walletId) await ownedWallet(userId, input.walletId);
+  const categoryId = await ownedCategory(userId, input.categoryId);
   const competences: string[] = [];
   for (
     let current = input.startCompetence;
@@ -543,7 +544,7 @@ export async function createScheduledRule(
       description,
       defaultAmountCents: input.amountCents * sign,
       type: input.type,
-      categoryId: input.categoryId || null,
+      categoryId,
       defaultWalletId: input.walletId || null,
       startCompetence: input.startCompetence,
       endCompetence: input.endCompetence || null,
