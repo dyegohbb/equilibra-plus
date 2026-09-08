@@ -143,6 +143,7 @@ const successMessages: Record<string, string> = {
   createCategory: "Categoria criada.",
   updateCategory: "Categoria atualizada.",
   createPurchase: "Lançamento salvo no extrato.",
+  createPurchaseBatch: "Lançamentos salvos no extrato.",
   createSchedule: "Recorrência criada.",
   billSchedule: "Programado faturado e adicionado ao extrato.",
   skipSchedule: "Programado ignorado neste mês.",
@@ -606,6 +607,18 @@ function New({
   mutate: (p: Record<string, unknown>) => Promise<void>;
   done: () => void;
 }) {
+  type QueuedPurchase = {
+    localId: string;
+    description: string;
+    amountCents: number;
+    type: "INCOME" | "EXPENSE";
+    walletId: string;
+    categoryId?: string;
+    consumptionDate: string;
+    competence: string;
+    mode: "CASH" | "INSTALLMENT_VALUE" | "TOTAL_VALUE";
+    quantity?: number;
+  };
   const [wid, setWid] = useState(wallets[0]?.id ?? ""),
     [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE"),
     [mode, setMode] = useState<"CASH" | "INSTALLMENT_VALUE" | "TOTAL_VALUE">(
@@ -615,6 +628,7 @@ function New({
     [qty, setQty] = useState(2),
     [date, setDate] = useState(today),
     [purchaseCompetence, setPurchaseCompetence] = useState(nextMonth),
+    [queue, setQueue] = useState<QueuedPurchase[]>([]),
     [error, setError] = useState(""),
     [categoryOpen, setCategoryOpen] = useState(false);
   const preview = useMemo(() => {
@@ -634,22 +648,56 @@ function New({
       return [];
     }
   }, [mode, amount, qty, purchaseCompetence]);
-  async function submit(e: FormEvent<HTMLFormElement>) {
+  function addToQueue(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     try {
-      await mutate({
-        action: "createPurchase",
-        description: f.get("description"),
+      const description = String(f.get("description") ?? "").trim();
+      if (!description) throw new Error("Informe a descrição.");
+      const purchase: QueuedPurchase = {
+        localId: crypto.randomUUID(),
+        description,
         amountCents: parseMoneyToCents(amount),
         type: kind,
         walletId: wid,
-        categoryId: f.get("categoryId") || undefined,
+        categoryId: String(f.get("categoryId") || "") || undefined,
         consumptionDate: date,
         competence: `${purchaseCompetence}-01`,
         mode,
         quantity: mode === "CASH" ? undefined : qty,
+      };
+      setQueue((items) => [...items, purchase]);
+      setAmount("");
+      const descriptionInput = e.currentTarget.querySelector<HTMLInputElement>(
+        'input[name="description"]',
+      );
+      if (descriptionInput) {
+        descriptionInput.value = "";
+        descriptionInput.focus();
+      }
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao adicionar.");
+    }
+  }
+  async function saveQueue() {
+    if (!queue.length) return;
+    try {
+      await mutate({
+        action: "createPurchaseBatch",
+        purchases: queue.map((item) => ({
+          description: item.description,
+          amountCents: item.amountCents,
+          type: item.type,
+          walletId: item.walletId,
+          categoryId: item.categoryId,
+          consumptionDate: item.consumptionDate,
+          competence: item.competence,
+          mode: item.mode,
+          quantity: item.quantity,
+        })),
       });
+      setQueue([]);
       done();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar.");
@@ -670,7 +718,7 @@ function New({
   if (!wallets.length) return <Empty text="Cadastre primeiro uma carteira." />;
   return (
     <>
-      <form className="panel form-panel" onSubmit={submit}>
+      <form className="panel form-panel" onSubmit={addToQueue}>
         <div className="segmented">
           <button
             type="button"
@@ -776,8 +824,72 @@ function New({
           </div>
         )}
         {error && <p className="error">{error}</p>}
-        <button className="action-button">Salvar lançamento</button>
+        <button className="action-button">Adicionar à lista</button>
       </form>
+      <section className="panel form-panel purchase-queue">
+        <div className="section-heading">
+          <h2>Lançamentos a salvar</h2>
+          <span className="count-badge">{queue.length}</span>
+        </div>
+        {queue.length === 0 ? (
+          <Empty text="Adicione lançamentos para montar a lista." />
+        ) : (
+          <div className="queue-table-wrap">
+            <table className="queue-table">
+              <thead>
+                <tr>
+                  <th>Descrição</th>
+                  <th>Tipo</th>
+                  <th>Carteira</th>
+                  <th>Categoria</th>
+                  <th>Competência</th>
+                  <th>Valor</th>
+                  <th><span className="sr-only">Ações</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {queue.map((item) => (
+                  <tr key={item.localId}>
+                    <td>{item.description}</td>
+                    <td>{item.type === "EXPENSE" ? "Saída" : "Entrada"}</td>
+                    <td>{wallets.find((x) => x.id === item.walletId)?.name}</td>
+                    <td>
+                      {categories.find((x) => x.id === item.categoryId)?.name ??
+                        "Sem categoria"}
+                    </td>
+                    <td>{comp(item.competence)}</td>
+                    <td className={item.type === "EXPENSE" ? "negative" : "positive"}>
+                      {fmt(item.amountCents)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="queue-remove"
+                        onClick={() =>
+                          setQueue((items) =>
+                            items.filter((x) => x.localId !== item.localId),
+                          )
+                        }
+                        aria-label={`Remover ${item.description} da lista`}
+                      >
+                        Remover
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <button
+          type="button"
+          className="action-button queue-save"
+          disabled={!queue.length}
+          onClick={() => void saveQueue()}
+        >
+          Salvar {queue.length} {queue.length === 1 ? "lançamento" : "lançamentos"}
+        </button>
+      </section>
       {categoryOpen && (
         <div
           className="modal-backdrop"

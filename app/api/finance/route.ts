@@ -23,6 +23,17 @@ const id = postgresUuid;
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const competenceDate = z.string().regex(/^\d{4}-\d{2}-01$/);
 const money = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const purchaseInput = z.object({
+  description: z.string(),
+  amountCents: money,
+  type: z.enum(["INCOME", "EXPENSE"]),
+  walletId: id,
+  categoryId: id.optional(),
+  consumptionDate: date,
+  competence: competenceDate,
+  mode: z.enum(["CASH", "INSTALLMENT_VALUE", "TOTAL_VALUE"]),
+  quantity: z.number().int().min(2).max(120).optional(),
+});
 
 async function userId() {
   const session = await getSession();
@@ -118,21 +129,21 @@ export async function POST(request: Request) {
         break;
       }
       case "createPurchase": {
-        const v = z
-          .object({
-            action: z.literal("createPurchase"),
-            description: z.string(),
-            amountCents: money,
-            type: z.enum(["INCOME", "EXPENSE"]),
-            walletId: id,
-            categoryId: id.optional(),
-            consumptionDate: date,
-            competence: competenceDate,
-            mode: z.enum(["CASH", "INSTALLMENT_VALUE", "TOTAL_VALUE"]),
-            quantity: z.number().int().min(2).max(120).optional(),
-          })
+        const v = purchaseInput
+          .extend({ action: z.literal("createPurchase") })
           .parse(body);
         await createPurchase(uid, v);
+        break;
+      }
+      case "createPurchaseBatch": {
+        const v = z
+          .object({
+            action: z.literal("createPurchaseBatch"),
+            purchases: z.array(purchaseInput).min(1).max(100),
+          })
+          .parse(body);
+        for (const purchase of v.purchases)
+          await createPurchase(uid, purchase);
         break;
       }
       case "createSchedule": {
