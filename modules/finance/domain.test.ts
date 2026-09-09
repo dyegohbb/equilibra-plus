@@ -8,9 +8,9 @@ describe("competência", () => {
 });
 
 describe("saldo previsto acumulado", () => {
-  it("considera pendências do mês atual", () => expect(calculateProjectedBalance(0, 0, 100000)).toBe(-100000));
-  it("acumula cinco meses não faturados sobre o saldo realizado", () => expect(calculateProjectedBalance(1000000, 0, 500000)).toBe(500000));
-  it("soma entradas e desconta saídas pendentes", () => expect(calculateProjectedBalance(1000000, 200000, 500000)).toBe(700000));
+  it("considera pendências do mês atual", () => expect(calculateProjectedBalance(0, 100000, 0, 0)).toBe(-100000));
+  it("acumula pendências dos meses anteriores", () => expect(calculateProjectedBalance(1000000, 100000, 400000, 0)).toBe(500000));
+  it("desconta também o total devido nos cartões", () => expect(calculateProjectedBalance(1000000, 100000, 200000, 300000)).toBe(400000));
 });
 
 describe("parcelas", () => {

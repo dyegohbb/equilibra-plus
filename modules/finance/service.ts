@@ -134,10 +134,13 @@ export async function getFinanceData(userId: string, competence: string) {
           sql<number>`coalesce(sum(case when ${scheduledEntries.expectedAmountCents} < 0 then -${scheduledEntries.expectedAmountCents} else 0 end), 0)`.mapWith(
             Number,
           ),
-        count: sql<number>`count(*)`.mapWith(Number),
+        count:
+          sql<number>`count(*) filter (where ${scheduledEntries.expectedAmountCents} < 0)`.mapWith(
+            Number,
+          ),
         oldestCompetence: sql<
           string | null
-        >`min(${scheduledEntries.competence})`,
+        >`min(${scheduledEntries.competence}) filter (where ${scheduledEntries.expectedAmountCents} < 0)`,
       })
       .from(scheduledEntries)
       .where(
@@ -196,8 +199,11 @@ export async function getFinanceData(userId: string, competence: string) {
   ]);
   const incomeCents = monthSummaryRows[0]?.incomeCents ?? 0;
   const expenseCents = monthSummaryRows[0]?.expenseCents ?? 0;
-  const pendingCents = scheduleRows
-    .filter(({ entry }) => entry.status === "PENDING")
+  const pendingCurrentExpenseCents = scheduleRows
+    .filter(
+      ({ entry }) =>
+        entry.status === "PENDING" && entry.expectedAmountCents < 0,
+    )
     .reduce((sum, { entry }) => sum + Math.abs(entry.expectedAmountCents), 0);
   const balances = new Map(
     balanceRows.map((row) => [row.walletId, row.balanceCents]),
@@ -222,16 +228,15 @@ export async function getFinanceData(userId: string, competence: string) {
   const pendingIncomeAccumulatedCents = pendingBalanceRows[0]?.incomeCents ?? 0;
   const pendingExpenseAccumulatedCents =
     pendingBalanceRows[0]?.expenseCents ?? 0;
+  const pendingPreviousExpenseCents = Math.max(
+    0,
+    pendingExpenseAccumulatedCents - pendingCurrentExpenseCents,
+  );
   const pendingAccumulatedCount = pendingBalanceRows[0]?.count ?? 0;
   const pendingOldestCompetence =
     pendingBalanceRows[0]?.oldestCompetence ?? null;
   const pendingAccumulatedCents =
     pendingIncomeAccumulatedCents - pendingExpenseAccumulatedCents;
-  const projectedAvailableBalanceCents = calculateProjectedBalance(
-    availableBalanceCents,
-    pendingIncomeAccumulatedCents,
-    pendingExpenseAccumulatedCents,
-  );
   const reservedCents = Math.max(0, reservedRows[0]?.amountCents ?? 0);
   const unreservedBalanceCents = availableBalanceCents - reservedCents;
   const invoiceByWallet = new Map(
@@ -244,6 +249,29 @@ export async function getFinanceData(userId: string, competence: string) {
       invoiceCents: Math.abs(invoiceByWallet.get(wallet.id) ?? 0),
       outstandingCents: Math.abs(Math.min(wallet.balanceCents, 0)),
     }));
+  const projectedAvailableBalanceCents = calculateProjectedBalance(
+    availableBalanceCents,
+    pendingCurrentExpenseCents,
+    pendingPreviousExpenseCents,
+    cardDebtCents,
+  );
+  const categoryMap = new Map<string, number>();
+  for (const row of transactionRows) {
+    if (
+      row.transaction.type !== "EXPENSE" ||
+      row.transaction.amountCents >= 0
+    )
+      continue;
+    const name = row.categoryName ?? "Sem categoria";
+    categoryMap.set(
+      name,
+      (categoryMap.get(name) ?? 0) + Math.abs(row.transaction.amountCents),
+    );
+  }
+  const categoryExpenses = Array.from(categoryMap, ([name, amountCents]) => ({
+    name,
+    amountCents,
+  })).sort((a, b) => b.amountCents - a.amountCents);
   return {
     wallets: walletRows,
     walletBalances,
@@ -254,7 +282,9 @@ export async function getFinanceData(userId: string, competence: string) {
       incomeCents,
       expenseCents,
       balanceCents: incomeCents - expenseCents,
-      pendingCents,
+      pendingCents: pendingCurrentExpenseCents,
+      pendingCurrentExpenseCents,
+      pendingPreviousExpenseCents,
       pendingAccumulatedCents,
       pendingIncomeAccumulatedCents,
       pendingExpenseAccumulatedCents,
@@ -267,6 +297,7 @@ export async function getFinanceData(userId: string, competence: string) {
       cardDebtCents,
       netWorthCents,
     },
+    categoryExpenses,
     cards,
   };
 }

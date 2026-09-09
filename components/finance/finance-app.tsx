@@ -70,11 +70,14 @@ type Data = {
   categories: Category[];
   transactions: Tx[];
   scheduled: Scheduled[];
+  categoryExpenses: { name: string; amountCents: number }[];
   summary: {
     incomeCents: number;
     expenseCents: number;
     balanceCents: number;
     pendingCents: number;
+    pendingCurrentExpenseCents: number;
+    pendingPreviousExpenseCents: number;
     pendingAccumulatedCents: number;
     pendingIncomeAccumulatedCents: number;
     pendingExpenseAccumulatedCents: number;
@@ -315,7 +318,7 @@ export function FinanceApp({
                   <RefreshButton onRefresh={() => load(true)} />
                 </div>
               )}
-              {tab === "dashboard" && <Dashboard data={data} setTab={setTab} />}{" "}
+              {tab === "dashboard" && <Dashboard data={data} />}{" "}
               {tab === "new" && (
                 <New
                   wallets={wallets}
@@ -410,225 +413,112 @@ function Nav({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     </nav>
   );
 }
-function Dashboard({ data, setTab }: { data: Data; setTab: (t: Tab) => void }) {
+function Dashboard({ data }: { data: Data }) {
   const s = data.summary;
-  const pendingRange = s.pendingOldestCompetence
-    ? `${comp(s.pendingOldestCompetence)} até a competência selecionada`
-    : "Nenhuma pendência até a competência selecionada";
+  const categoryTotal = data.categoryExpenses.reduce(
+    (sum, item) => sum + item.amountCents,
+    0,
+  );
   return (
-    <div className="page-stack">
-      <section className="balance-hero">
-        <div>
-          <div className="label-with-info">
-            <p className="eyebrow">SALDO REALIZADO ACUMULADO</p>
-            <InfoTip text="Soma dos lançamentos já realizados nas contas até a competência selecionada. Não inclui cartões nem programações pendentes." />
-          </div>
-          <strong>
-            <Money value={s.availableBalanceCents} />
-          </strong>
-        </div>
-        <div className="hero-stats">
-          <span>
-            <span className="label-with-info">
-              Saldo livre{" "}
-              <InfoTip text="Saldo realizado menos os valores separados em metas e reservas." />
-            </span>
-            <b
-              className={s.unreservedBalanceCents < 0 ? "negative" : "positive"}
-            >
-              <Money value={s.unreservedBalanceCents} />
-            </b>
-          </span>
-          <span>
-            <span className="label-with-info">
-              Saídas pendentes{" "}
-              <InfoTip text="Soma de todas as saídas programadas que continuam pendentes, desde a ocorrência mais antiga até a competência selecionada." />
-            </span>
-            <b className="negative">
-              <Money value={s.pendingExpenseAccumulatedCents} prefix="− " />
-            </b>
-          </span>
-          <span>
-            <span className="label-with-info">
-              Entradas pendentes{" "}
-              <InfoTip text="Soma de todas as entradas programadas que continuam pendentes até a competência selecionada." />
-            </span>
-            <b className="positive">
-              <Money value={s.pendingIncomeAccumulatedCents} prefix="+ " />
-            </b>
-          </span>
-          <span>
-            <span className="label-with-info">
-              Saldo previsto{" "}
-              <InfoTip text="Saldo realizado menos as saídas pendentes, mais as entradas pendentes." />
-            </span>
-            <b
-              className={
-                s.projectedAvailableBalanceCents < 0 ? "negative" : "positive"
-              }
-            >
-              <Money value={s.projectedAvailableBalanceCents} />
-            </b>
-          </span>
-        </div>
-      </section>
+    <div className="overview-stack">
       <section
-        className={`forecast-equation ${s.projectedAvailableBalanceCents < 0 ? "forecast-negative" : ""}`}
+        className={`unified-balance ${s.projectedAvailableBalanceCents < 0 ? "unified-balance-negative" : ""}`}
       >
-        <div className="forecast-heading">
+        <div className="unified-heading">
           <div>
-            <p className="eyebrow">PREVISÃO ACUMULADA</p>
+            <p className="eyebrow">VISÃO FINANCEIRA UNIFICADA</p>
             <div className="label-with-info">
-              <h2>Composição do saldo</h2>
-              <InfoTip
-                text={`${pendingRange}. Inclui todos os meses anteriores com programações que ainda não foram faturadas ou ignoradas.`}
-              />
+              <h2>Saldo previsto</h2>
+              <InfoTip text="Quanto deve restar nas contas depois de descontar programações pendentes do mês, pendências anteriores e toda a dívida aberta dos cartões." />
             </div>
           </div>
-          <span>
-            {s.pendingAccumulatedCount}{" "}
-            {s.pendingAccumulatedCount === 1 ? "pendência" : "pendências"}
-          </span>
+          <strong>
+            <Money value={s.projectedAvailableBalanceCents} />
+          </strong>
         </div>
-        <div className="forecast-terms">
-          <div className="forecast-term">
-            <span>Saldo realizado</span>
-            <strong>
-              <Money value={s.availableBalanceCents} />
-            </strong>
-          </div>
-          <b className="forecast-operator" aria-label="menos">
-            −
-          </b>
-          <div className="forecast-term expense-term">
-            <span>Saídas pendentes</span>
-            <strong>
-              <Money value={s.pendingExpenseAccumulatedCents} />
-            </strong>
-          </div>
-          <b className="forecast-operator" aria-label="mais">
-            +
-          </b>
-          <div className="forecast-term income-term">
-            <span>Entradas pendentes</span>
-            <strong>
-              <Money value={s.pendingIncomeAccumulatedCents} />
-            </strong>
-          </div>
-          <b className="forecast-operator" aria-label="igual">
-            =
-          </b>
-          <div className="forecast-term result-term">
-            <span>Saldo previsto</span>
-            <strong>
-              <Money value={s.projectedAvailableBalanceCents} />
-            </strong>
-          </div>
+        <div className="unified-formula">
+          <OverviewTerm
+            label="Saldo atual"
+            value={s.availableBalanceCents}
+            tip="Dinheiro disponível nas carteiras do tipo conta, acumulado até a competência selecionada. Cartões não entram neste valor."
+          />
+          <span className="unified-operator">−</span>
+          <OverviewTerm
+            label="Programado do mês"
+            value={s.pendingCurrentExpenseCents}
+            tip="Saídas programadas desta competência que ainda não foram faturadas nem ignoradas."
+            expense
+          />
+          <span className="unified-operator">−</span>
+          <OverviewTerm
+            label="Programados anteriores"
+            value={s.pendingPreviousExpenseCents}
+            tip="Saídas programadas de competências anteriores que continuam pendentes."
+            expense
+          />
+          <span className="unified-operator">−</span>
+          <OverviewTerm
+            label="Total dos cartões"
+            value={s.cardDebtCents}
+            tip="Soma de tudo que ainda está em aberto nos cartões de crédito até a competência selecionada."
+            expense
+          />
         </div>
       </section>
-      <section className="summary-grid compact-metrics">
-        <Metric label="Entradas do mês" value={s.incomeCents} />
-        <Metric label="Saídas do mês" value={s.expenseCents} />
-        <Metric label="Resultado do mês" value={s.balanceCents} />
-        <Metric label="Programado neste mês" value={s.pendingCents} />
-      </section>
-      <Panel title="Suas carteiras">
-        <div className="wallet-grid">
-          {data.walletBalances
-            .filter((x) => x.active)
-            .map((x) => (
-              <article
-                className={`wallet-balance ${x.type === "CREDIT_CARD" ? "wallet-card" : ""}`}
-                key={x.id}
-              >
-                <span>
-                  {x.type === "CREDIT_CARD"
-                    ? "Cartão de crédito"
-                    : "Conta disponível"}
-                </span>
-                <h3>{x.name}</h3>
-                <strong
-                  className={x.balanceCents < 0 ? "negative" : "positive"}
-                >
-                  <Money value={x.balanceCents} />
-                </strong>
-                <small>
-                  {x.type === "CREDIT_CARD"
-                    ? x.balanceCents < 0
-                      ? "Saldo em aberto"
-                      : "Cartão quitado"
-                    : "Saldo acumulado"}
-                </small>
-              </article>
-            ))}
+      <section className="panel category-overview">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">SAÍDAS POR CATEGORIA</p>
+            <div className="label-with-info">
+              <h2>Onde o dinheiro foi usado</h2>
+              <InfoTip text="Distribuição dos lançamentos de saída já realizados na competência selecionada. Programações ainda pendentes não aparecem aqui." />
+            </div>
+          </div>
+          <strong><Money value={categoryTotal} /></strong>
         </div>
-      </Panel>
-      <div className="two-columns">
-        <Panel title="Últimos lançamentos">
-          <TxList rows={data.transactions.slice(0, 5)} />
-          <button
-            className="text-button"
-            onClick={() => setTab("transactions")}
-          >
-            Ver extrato completo
-          </button>
-        </Panel>
-        <Panel title="Programados deste mês">
-          {data.scheduled
-            .filter((x) => x.entry.status === "PENDING")
-            .slice(0, 5)
-            .map((x) => (
-              <div className="simple-row" key={x.entry.id}>
+        {data.categoryExpenses.length ? (
+          <div className="category-breakdown">
+            {data.categoryExpenses.map((item) => (
+              <div className="category-value" key={item.name}>
                 <div>
-                  <b>{x.entry.description}</b>
-                  <span>{x.categoryName ?? "Sem categoria"}</span>
+                  <span>{item.name}</span>
+                  <b><Money value={item.amountCents} /></b>
                 </div>
-                <strong
-                  className={
-                    x.entry.expectedAmountCents < 0 ? "negative" : "positive"
-                  }
-                >
-                  <Money value={x.entry.expectedAmountCents} />
-                </strong>
+                <span className="category-track">
+                  <i
+                    style={{
+                      width: `${categoryTotal ? Math.max(3, (item.amountCents / categoryTotal) * 100) : 0}%`,
+                    }}
+                  />
+                </span>
               </div>
             ))}
-          {!data.scheduled.some((x) => x.entry.status === "PENDING") && (
-            <Empty />
-          )}
-        </Panel>
-      </div>
-      <Panel title="Cartões">
-        <div className="card-strip">
-          {data.cards.map((x) => (
-            <article className="credit-card" key={x.id}>
-              <span>{x.name}</span>
-              <small>Saldo em aberto</small>
-              <strong>
-                <Money value={x.outstandingCents} />
-              </strong>
-              <small>
-                Compras do mês: <Money value={x.invoiceCents} />
-              </small>
-            </article>
-          ))}
-          {!data.cards.length && (
-            <Empty text="Cadastre um cartão para acompanhar faturas." />
-          )}
-        </div>
-      </Panel>
+          </div>
+        ) : (
+          <Empty text="Nenhuma saída realizada nesta competência." />
+        )}
+      </section>
     </div>
   );
 }
-function Metric({ label, value }: { label: string; value: number }) {
+function OverviewTerm({
+  label,
+  value,
+  tip,
+  expense = false,
+}: {
+  label: string;
+  value: number;
+  tip: string;
+  expense?: boolean;
+}) {
   return (
-    <article className="metric">
+    <article className={`overview-term ${expense ? "overview-expense" : ""}`}>
       <div className="label-with-info">
         <span>{label}</span>
-        <InfoTip text="Valor referente somente à competência selecionada." />
+        <InfoTip text={tip} />
       </div>
-      <strong className={value < 0 ? "negative" : ""}>
-        <Money value={value} />
-      </strong>
+      <strong><Money value={value} /></strong>
     </article>
   );
 }
