@@ -110,7 +110,8 @@ const today = new Date().toLocaleDateString("en-CA", {
   timeZone: "America/Recife",
 });
 const current = `${today.slice(0, 7)}-01`;
-const nextMonth = addMonths(current, 1).slice(0, 7);
+const nextCompetence = addMonths(current, 1);
+const nextMonth = nextCompetence.slice(0, 7);
 const comp = (v: string) => `${v.slice(5, 7)}/${v.slice(0, 4)}`;
 const fmt = (v: number) => brl.format(v / 100);
 const BalanceVisibilityContext = createContext(false);
@@ -158,7 +159,7 @@ export function FinanceApp({
   initialTab?: Tab;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab),
-    [competence, setCompetence] = useState(current),
+    [competence, setCompetence] = useState(nextCompetence),
     [data, setData] = useState<Data | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
