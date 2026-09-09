@@ -205,6 +205,12 @@ export async function getFinanceData(userId: string, competence: string) {
         entry.status === "PENDING" && entry.expectedAmountCents < 0,
     )
     .reduce((sum, { entry }) => sum + Math.abs(entry.expectedAmountCents), 0);
+  const pendingCurrentIncomeCents = scheduleRows
+    .filter(
+      ({ entry }) =>
+        entry.status === "PENDING" && entry.expectedAmountCents > 0,
+    )
+    .reduce((sum, { entry }) => sum + entry.expectedAmountCents, 0);
   const balances = new Map(
     balanceRows.map((row) => [row.walletId, row.balanceCents]),
   );
@@ -228,6 +234,10 @@ export async function getFinanceData(userId: string, competence: string) {
   const pendingIncomeAccumulatedCents = pendingBalanceRows[0]?.incomeCents ?? 0;
   const pendingExpenseAccumulatedCents =
     pendingBalanceRows[0]?.expenseCents ?? 0;
+  const pendingPreviousIncomeCents = Math.max(
+    0,
+    pendingIncomeAccumulatedCents - pendingCurrentIncomeCents,
+  );
   const pendingPreviousExpenseCents = Math.max(
     0,
     pendingExpenseAccumulatedCents - pendingCurrentExpenseCents,
@@ -251,6 +261,8 @@ export async function getFinanceData(userId: string, competence: string) {
     }));
   const projectedAvailableBalanceCents = calculateProjectedBalance(
     availableBalanceCents,
+    pendingCurrentIncomeCents,
+    pendingPreviousIncomeCents,
     pendingCurrentExpenseCents,
     pendingPreviousExpenseCents,
     cardDebtCents,
@@ -283,7 +295,9 @@ export async function getFinanceData(userId: string, competence: string) {
       expenseCents,
       balanceCents: incomeCents - expenseCents,
       pendingCents: pendingCurrentExpenseCents,
+      pendingCurrentIncomeCents,
       pendingCurrentExpenseCents,
+      pendingPreviousIncomeCents,
       pendingPreviousExpenseCents,
       pendingAccumulatedCents,
       pendingIncomeAccumulatedCents,

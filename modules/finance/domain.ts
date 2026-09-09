@@ -54,14 +54,18 @@ export function parseMoneyToCents(value: string) {
 
 export function calculateProjectedBalance(
   availableBalanceCents: number,
-  currentPendingCents: number,
-  previousPendingCents: number,
+  currentPendingIncomeCents: number,
+  previousPendingIncomeCents: number,
+  currentPendingExpenseCents: number,
+  previousPendingExpenseCents: number,
   cardDebtCents: number,
 ) {
   return (
-    availableBalanceCents -
-    currentPendingCents -
-    previousPendingCents -
+    availableBalanceCents +
+    currentPendingIncomeCents +
+    previousPendingIncomeCents -
+    currentPendingExpenseCents -
+    previousPendingExpenseCents -
     cardDebtCents
   );
 }

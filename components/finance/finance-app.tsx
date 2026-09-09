@@ -76,7 +76,9 @@ type Data = {
     expenseCents: number;
     balanceCents: number;
     pendingCents: number;
+    pendingCurrentIncomeCents: number;
     pendingCurrentExpenseCents: number;
+    pendingPreviousIncomeCents: number;
     pendingPreviousExpenseCents: number;
     pendingAccumulatedCents: number;
     pendingIncomeAccumulatedCents: number;
@@ -429,34 +431,33 @@ function Dashboard({ data }: { data: Data }) {
             <p className="eyebrow">VISÃO FINANCEIRA UNIFICADA</p>
             <div className="label-with-info">
               <h2>Saldo previsto</h2>
-              <InfoTip text="Quanto deve restar nas contas depois de descontar programações pendentes do mês, pendências anteriores e toda a dívida aberta dos cartões." />
+              <InfoTip text="Saldo atual mais entradas programadas pendentes, menos saídas programadas pendentes e menos toda a dívida aberta dos cartões." />
             </div>
           </div>
           <strong>
             <Money value={s.projectedAvailableBalanceCents} />
           </strong>
         </div>
-        <div className="unified-formula">
+        <div className="unified-formula unified-formula-groups">
           <OverviewTerm
             label="Saldo atual"
             value={s.availableBalanceCents}
             tip="Dinheiro disponível nas carteiras do tipo conta, acumulado até a competência selecionada. Cartões não entram neste valor."
           />
-          <span className="unified-operator">−</span>
-          <OverviewTerm
-            label="Programado do mês"
-            value={s.pendingCurrentExpenseCents}
-            tip="Saídas programadas desta competência que ainda não foram faturadas nem ignoradas."
-            expense
+          <ProgrammedOverview
+            label="Programados do mês"
+            income={s.pendingCurrentIncomeCents}
+            expense={s.pendingCurrentExpenseCents}
+            incomeTip="Entradas programadas desta competência que continuam pendentes e serão somadas ao saldo previsto."
+            expenseTip="Saídas programadas desta competência que continuam pendentes e serão descontadas do saldo previsto."
           />
-          <span className="unified-operator">−</span>
-          <OverviewTerm
+          <ProgrammedOverview
             label="Programados anteriores"
-            value={s.pendingPreviousExpenseCents}
-            tip="Saídas programadas de competências anteriores que continuam pendentes."
-            expense
+            income={s.pendingPreviousIncomeCents}
+            expense={s.pendingPreviousExpenseCents}
+            incomeTip="Entradas de competências anteriores que ainda não foram faturadas nem ignoradas."
+            expenseTip="Saídas de competências anteriores que ainda não foram faturadas nem ignoradas."
           />
-          <span className="unified-operator">−</span>
           <OverviewTerm
             label="Total dos cartões"
             value={s.cardDebtCents}
@@ -501,6 +502,39 @@ function Dashboard({ data }: { data: Data }) {
     </div>
   );
 }
+function ProgrammedOverview({
+  label,
+  income,
+  expense,
+  incomeTip,
+  expenseTip,
+}: {
+  label: string;
+  income: number;
+  expense: number;
+  incomeTip: string;
+  expenseTip: string;
+}) {
+  return (
+    <article className="overview-term programmed-overview">
+      <h3>{label}</h3>
+      <div className="programmed-value programmed-income">
+        <div className="label-with-info">
+          <span>Entradas</span>
+          <InfoTip text={incomeTip} />
+        </div>
+        <strong>+ <Money value={income} /></strong>
+      </div>
+      <div className="programmed-value programmed-expense">
+        <div className="label-with-info">
+          <span>Saídas</span>
+          <InfoTip text={expenseTip} />
+        </div>
+        <strong>− <Money value={expense} /></strong>
+      </div>
+    </article>
+  );
+}
 function OverviewTerm({
   label,
   value,
@@ -518,7 +552,7 @@ function OverviewTerm({
         <span>{label}</span>
         <InfoTip text={tip} />
       </div>
-      <strong><Money value={value} /></strong>
+      <strong><Money value={value} prefix={expense ? "− " : ""} /></strong>
     </article>
   );
 }
