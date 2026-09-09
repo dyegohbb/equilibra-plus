@@ -1503,8 +1503,12 @@ function Schedules({
   mutate: (p: Record<string, unknown>) => Promise<void>;
 }) {
   const [deleting, setDeleting] = useState<Scheduled | null>(null),
-    [billing, setBilling] = useState<Scheduled | null>(null);
+    [billing, setBilling] = useState<Scheduled | null>(null),
+    [hasEnd, setHasEnd] = useState(false),
+    [startCompetence, setStartCompetence] = useState(competence.slice(0, 7)),
+    [endCompetence, setEndCompetence] = useState(nextMonth);
   const notify = useNotifications();
+  const pendingRows = rows.filter((x) => x.entry.status === "PENDING");
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -1516,10 +1520,11 @@ function Schedules({
         type: f.get("type"),
         categoryId: f.get("categoryId") || undefined,
         walletId: f.get("walletId") || undefined,
-        startCompetence: `${f.get("start")}-01`,
-        endCompetence: f.get("end") ? `${f.get("end")}-01` : undefined,
+        startCompetence: `${startCompetence}-01`,
+        endCompetence: hasEnd ? `${endCompetence}-01` : undefined,
       });
       e.currentTarget.reset();
+      setHasEnd(false);
     } catch {}
   }
   function openBill(x: Scheduled) {
@@ -1547,44 +1552,92 @@ function Schedules({
   return (
     <>
       <div className="page-stack">
-        <Panel title="Novo valor mensal">
-          <form className="inline-form" onSubmit={create}>
-            <input name="description" required placeholder="Descrição" />
-            <input name="amount" required placeholder="Valor" />
-            <select name="type">
-              <option value="EXPENSE">Saída</option>
-              <option value="INCOME">Entrada</option>
-            </select>
-            <select name="categoryId">
-              <option value="">Sem categoria</option>
-              {categories.map((x) => (
-                <option value={x.id} key={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
-            <select name="walletId">
-              <option value="">Carteira ao faturar</option>
-              {wallets.map((wallet) => (
-                <option value={wallet.id} key={wallet.id}>
-                  {wallet.name}
-                </option>
-              ))}
-            </select>
-            <input
-              name="start"
-              type="month"
-              defaultValue={competence.slice(0, 7)}
-              required
-            />
-            <input name="end" type="month" />
-            <button>Criar</button>
+        <Panel title="Nova programação mensal">
+          <form className="schedule-form" onSubmit={create}>
+            <div className="form-grid">
+              <Field label="Descrição">
+                <input
+                  name="description"
+                  required
+                  placeholder="Ex.: Aluguel"
+                  maxLength={120}
+                />
+              </Field>
+              <Field label="Valor mensal">
+                <input
+                  name="amount"
+                  inputMode="decimal"
+                  required
+                  placeholder="0,00"
+                />
+              </Field>
+              <Field label="Tipo">
+                <select name="type">
+                  <option value="EXPENSE">Saída</option>
+                  <option value="INCOME">Entrada</option>
+                </select>
+              </Field>
+              <Field label="Categoria">
+                <select name="categoryId">
+                  <option value="">Sem categoria</option>
+                  {categories.map((x) => (
+                    <option value={x.id} key={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Carteira padrão">
+                <select name="walletId">
+                  <option value="">Definir somente ao faturar</option>
+                  {wallets.map((wallet) => (
+                    <option value={wallet.id} key={wallet.id}>
+                      {wallet.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Competência inicial">
+                <input
+                  type="month"
+                  value={startCompetence}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setStartCompetence(next);
+                    if (endCompetence < next) setEndCompetence(next);
+                  }}
+                  required
+                />
+              </Field>
+            </div>
+            <div className="schedule-period">
+              <label className="schedule-end-toggle">
+                <input
+                  type="checkbox"
+                  checked={hasEnd}
+                  onChange={(event) => setHasEnd(event.target.checked)}
+                />
+                <span aria-hidden="true" />
+                <b>Definir uma competência final</b>
+              </label>
+              {hasEnd && (
+                <Field label="Competência final">
+                  <input
+                    type="month"
+                    min={startCompetence}
+                    value={endCompetence}
+                    onChange={(event) => setEndCompetence(event.target.value)}
+                    required
+                  />
+                </Field>
+              )}
+            </div>
+            <button className="action-button">Criar programação</button>
           </form>
         </Panel>
         <Panel title={`Pendentes · ${comp(competence)}`}>
-          {rows
-            .filter((x) => x.entry.status === "PENDING")
-            .map((x) => (
+          <div className="scheduled-list">
+            {pendingRows.map((x) => (
               <div className="simple-row scheduled-item" key={x.entry.id}>
                 <div>
                   <b>{x.entry.description}</b>
@@ -1621,6 +1674,10 @@ function Schedules({
                 </div>
               </div>
             ))}
+            {!pendingRows.length && (
+              <Empty text="Nenhuma programação pendente nesta competência." />
+            )}
+          </div>
         </Panel>
       </div>
       {billing && (

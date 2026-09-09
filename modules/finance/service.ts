@@ -533,6 +533,8 @@ export async function createScheduledRule(
   if (!description || input.amountCents <= 0)
     throw new Error("Programado inválido.");
   const end = input.endCompetence || addMonths(input.startCompetence, 119);
+  if (end < input.startCompetence)
+    throw new Error("A competência final não pode ser anterior à inicial.");
   if (input.walletId) await ownedWallet(userId, input.walletId);
   const categoryId = await ownedCategory(userId, input.categoryId);
   const competences: string[] = [];

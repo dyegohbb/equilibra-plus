@@ -159,8 +159,8 @@ export async function POST(request: Request) {
             type: z.enum(["INCOME", "EXPENSE"]),
             categoryId: id.optional(),
             walletId: id.optional(),
-            startCompetence: date,
-            endCompetence: date.optional(),
+            startCompetence: competenceDate,
+            endCompetence: competenceDate.optional(),
           })
           .parse(body);
         await createScheduledRule(uid, v);
