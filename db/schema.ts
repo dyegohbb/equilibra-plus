@@ -121,6 +121,8 @@ export const scheduledRules = pgTable(
     type: transactionType("type").notNull(),
     categoryId: uuid("category_id").references(() => categories.id),
     defaultWalletId: uuid("default_wallet_id").references(() => wallets.id),
+    autoBillEnabled: boolean("auto_bill_enabled").default(false).notNull(),
+    autoBillDay: integer("auto_bill_day"),
     frequency: scheduleFrequency("frequency").default("MONTHLY").notNull(),
     startCompetence: date("start_competence").notNull(),
     endCompetence: date("end_competence"),
@@ -128,7 +130,18 @@ export const scheduledRules = pgTable(
     active: boolean("active").default(true).notNull(),
     ...audit,
   },
-  (t) => [index("scheduled_rules_user_idx").on(t.userId)],
+  (t) => [
+    index("scheduled_rules_user_idx").on(t.userId),
+    index("scheduled_rules_auto_bill_idx").on(
+      t.autoBillEnabled,
+      t.active,
+      t.paused,
+    ),
+    check(
+      "scheduled_rule_auto_bill_day",
+      sql`(${t.autoBillDay} IS NULL OR ${t.autoBillDay} BETWEEN 1 AND 31) AND (${t.autoBillEnabled} = false OR (${t.autoBillDay} IS NOT NULL AND ${t.defaultWalletId} IS NOT NULL))`,
+    ),
+  ],
 );
 
 export const scheduledEntries = pgTable(
@@ -155,6 +168,7 @@ export const scheduledEntries = pgTable(
       t.status,
     ),
     index("scheduled_entries_rule_idx").on(t.scheduledRuleId),
+    index("scheduled_entries_auto_bill_idx").on(t.status, t.competence),
     uniqueIndex("scheduled_rule_comp_unique").on(
       t.scheduledRuleId,
       t.competence,

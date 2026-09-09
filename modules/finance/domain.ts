@@ -69,3 +69,11 @@ export function calculateProjectedBalance(
     cardDebtCents
   );
 }
+
+export function scheduledDateForCompetence(competence: string, day: number) {
+  const date = parseCivilDate(competence);
+  const lastDay = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  return `${competence.slice(0, 7)}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}

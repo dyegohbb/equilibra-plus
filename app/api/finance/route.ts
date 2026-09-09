@@ -159,6 +159,8 @@ export async function POST(request: Request) {
             type: z.enum(["INCOME", "EXPENSE"]),
             categoryId: id.optional(),
             walletId: id.optional(),
+            autoBillEnabled: z.boolean().default(false),
+            autoBillDay: z.number().int().min(1).max(31).optional(),
             startCompetence: competenceDate,
             endCompetence: competenceDate.optional(),
           })

@@ -570,6 +570,8 @@ export async function createScheduledRule(
     type: TransactionKind;
     categoryId?: string;
     walletId?: string;
+    autoBillEnabled?: boolean;
+    autoBillDay?: number;
     startCompetence: string;
     endCompetence?: string;
   },
@@ -581,6 +583,13 @@ export async function createScheduledRule(
   if (end < input.startCompetence)
     throw new Error("A competência final não pode ser anterior à inicial.");
   if (input.walletId) await ownedWallet(userId, input.walletId);
+  if (input.autoBillEnabled && !input.walletId)
+    throw new Error("Escolha uma carteira para ativar o faturamento automático.");
+  if (
+    input.autoBillEnabled &&
+    (!input.autoBillDay || input.autoBillDay < 1 || input.autoBillDay > 31)
+  )
+    throw new Error("Informe um dia válido para o faturamento automático.");
   const categoryId = await ownedCategory(userId, input.categoryId);
   const competences: string[] = [];
   for (
@@ -600,6 +609,8 @@ export async function createScheduledRule(
       type: input.type,
       categoryId,
       defaultWalletId: input.walletId || null,
+      autoBillEnabled: input.autoBillEnabled ?? false,
+      autoBillDay: input.autoBillDay ?? null,
       startCompetence: input.startCompetence,
       endCompetence: input.endCompetence || null,
     });

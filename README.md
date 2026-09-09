@@ -32,6 +32,7 @@ Configure na Vercel, no ambiente **Production**:
 
 - `NEON_AUTH_BASE_URL`: endpoint do Auth do branch `production`.
 - `NEON_AUTH_COOKIE_SECRET`: segredo criptográfico de pelo menos 32 caracteres, diferente do DEV e salvo como Secret.
+- `CRON_SECRET`: segredo aleatório de pelo menos 16 caracteres usado pela Vercel para autenticar o faturamento automático diário. Após cadastrá-lo, faça um novo deploy de produção.
 
 Development e Preview devem usar um branch isolado do Neon e outro segredo. Cadastre apenas as origens necessárias em Neon Auth → Configuration → Trusted domains. Não utilize wildcard global. O SDK também faz o proxy de autenticação pela mesma origem da aplicação.
 

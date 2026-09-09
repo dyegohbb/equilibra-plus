@@ -25,7 +25,7 @@ import {
   transactions,
   wallets,
 } from "@/db/schema";
-import { addMonths, calculateInstallments } from "./domain";
+import { addMonths, calculateInstallments, scheduledDateForCompetence } from "./domain";
 
 const now = () => new Date();
 const activeTransaction = isNull(transactions.deletedAt);
@@ -381,6 +381,8 @@ export async function updateRecurringRule(
     type: "INCOME" | "EXPENSE";
     categoryId?: string | null;
     walletId?: string | null;
+    autoBillEnabled: boolean;
+    autoBillDay?: number | null;
     startCompetence: string;
     endCompetence?: string | null;
     fromCompetence: string;
@@ -393,6 +395,13 @@ export async function updateRecurringRule(
     .limit(1);
   if (!rule) throw new Error("Recorrência não encontrada.");
   if (input.walletId) await assertOwnedWallet(userId, input.walletId);
+  if (input.autoBillEnabled && !input.walletId)
+    throw new Error("Escolha uma carteira para ativar o faturamento automático.");
+  if (
+    input.autoBillEnabled &&
+    (!input.autoBillDay || input.autoBillDay < 1 || input.autoBillDay > 31)
+  )
+    throw new Error("Informe um dia válido para o faturamento automático.");
   if (input.categoryId) await assertOwnedCategory(userId, input.categoryId);
   const sign = input.type === "EXPENSE" ? -1 : 1;
   const end = input.endCompetence ?? addMonths(input.fromCompetence, 59);
@@ -413,6 +422,8 @@ export async function updateRecurringRule(
         type: input.type,
         categoryId: input.categoryId || null,
         defaultWalletId: input.walletId || null,
+        autoBillEnabled: input.autoBillEnabled,
+        autoBillDay: input.autoBillDay ?? null,
         startCompetence: input.startCompetence,
         endCompetence: input.endCompetence || null,
         updatedAt: now(),
@@ -468,6 +479,94 @@ export async function updateRecurringRule(
         target: [scheduledEntries.scheduledRuleId, scheduledEntries.competence],
       });
   });
+}
+export async function setRecurringAutoBill(
+  userId: string,
+  id: string,
+  enabled: boolean,
+) {
+  const [rule] = await getDb()
+    .select({
+      walletId: scheduledRules.defaultWalletId,
+      autoBillDay: scheduledRules.autoBillDay,
+    })
+    .from(scheduledRules)
+    .where(and(eq(scheduledRules.userId, userId), eq(scheduledRules.id, id)))
+    .limit(1);
+  if (!rule) throw new Error("Recorrência não encontrada.");
+  if (enabled && (!rule.walletId || !rule.autoBillDay))
+    throw new Error("Defina carteira e dia antes de ativar o faturamento automático.");
+  await getDb()
+    .update(scheduledRules)
+    .set({ autoBillEnabled: enabled, updatedAt: now() })
+    .where(and(eq(scheduledRules.userId, userId), eq(scheduledRules.id, id)));
+}
+
+export async function runScheduledAutoBilling(today: string) {
+  const currentCompetence = `${today.slice(0, 7)}-01`;
+  const db = getDb();
+  const candidates = await db
+    .select({ entry: scheduledEntries, rule: scheduledRules })
+    .from(scheduledEntries)
+    .innerJoin(
+      scheduledRules,
+      eq(scheduledEntries.scheduledRuleId, scheduledRules.id),
+    )
+    .where(
+      and(
+        eq(scheduledEntries.status, "PENDING"),
+        lte(scheduledEntries.competence, currentCompetence),
+        eq(scheduledRules.autoBillEnabled, true),
+        eq(scheduledRules.active, true),
+        eq(scheduledRules.paused, false),
+        isNotNull(scheduledRules.defaultWalletId),
+        isNotNull(scheduledRules.autoBillDay),
+      ),
+    );
+  const due = candidates.filter(
+    ({ entry, rule }) =>
+      scheduledDateForCompetence(entry.competence, rule.autoBillDay!) <= today,
+  );
+  let billed = 0;
+  for (const { entry, rule } of due) {
+    const transactionId = crypto.randomUUID();
+    const created = await db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(scheduledEntries)
+        .set({
+          status: "BILLED",
+          billedTransactionId: transactionId,
+          updatedAt: now(),
+        })
+        .where(
+          and(
+            eq(scheduledEntries.id, entry.id),
+            eq(scheduledEntries.status, "PENDING"),
+          ),
+        )
+        .returning({ id: scheduledEntries.id });
+      if (!claimed.length) return false;
+      await tx.insert(transactions).values({
+        id: transactionId,
+        userId: entry.userId,
+        walletId: rule.defaultWalletId!,
+        scheduledEntryId: entry.id,
+        externalId: `auto-schedule:${entry.id}`,
+        description: entry.description,
+        amountCents: entry.expectedAmountCents,
+        type: rule.type,
+        categoryId: rule.categoryId,
+        consumptionDate: scheduledDateForCompetence(
+          entry.competence,
+          rule.autoBillDay!,
+        ),
+        competence: entry.competence,
+      });
+      return true;
+    });
+    if (created) billed += 1;
+  }
+  return { checked: candidates.length, due: due.length, billed };
 }
 export async function setRecurringState(
   userId: string,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCompetence, calculateInstallmentCompetences, calculateInstallments, calculateProjectedBalance, parseMoneyToCents } from "./domain";
+import { calculateCompetence, calculateInstallmentCompetences, calculateInstallments, calculateProjectedBalance, parseMoneyToCents, scheduledDateForCompetence } from "./domain";
 
 describe("competência", () => {
   it("usa o mês do consumo em conta normal", () => expect(calculateCompetence("CASH_ACCOUNT", "2026-09-05")).toBe("2026-09-01"));
@@ -18,4 +18,9 @@ describe("parcelas", () => {
   it("distribui centavos sem alterar o total", () => expect(calculateInstallments("TOTAL_VALUE", 10000, 3)).toEqual([3334, 3334, 3332]));
   it("avança competências", () => expect(calculateInstallmentCompetences("2026-12-01", 3)).toEqual(["2026-12-01", "2027-01-01", "2027-02-01"]));
   it("converte moeda brasileira", () => expect(parseMoneyToCents("1.234,56")).toBe(123456));
+});
+
+describe("data de faturamento automático", () => {
+  it("usa o dia configurado", () => expect(scheduledDateForCompetence("2026-10-01", 10)).toBe("2026-10-10"));
+  it("ajusta o dia 31 para o último dia do mês", () => expect(scheduledDateForCompetence("2027-02-01", 31)).toBe("2027-02-28"));
 });

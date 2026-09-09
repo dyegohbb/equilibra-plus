@@ -13,6 +13,7 @@ import {
   getReports,
   getTransactionsPage,
   setBudget,
+  setRecurringAutoBill,
   setRecurringState,
   updateRecurringRule,
 } from "@/modules/finance/advanced-service";
@@ -124,12 +125,25 @@ export async function POST(request: Request) {
             type: z.enum(["INCOME", "EXPENSE"]),
             categoryId: uuid.nullable().optional(),
             walletId: uuid.nullable().optional(),
+            autoBillEnabled: z.boolean(),
+            autoBillDay: z.number().int().min(1).max(31).nullable().optional(),
             startCompetence: date,
             endCompetence: date.nullable().optional(),
             fromCompetence: date,
           })
           .parse(body);
         await updateRecurringRule(uid, v.id, v);
+        break;
+      }
+      case "setRecurringAutoBill": {
+        const v = z
+          .object({
+            action: z.literal("setRecurringAutoBill"),
+            id: uuid,
+            enabled: z.boolean(),
+          })
+          .parse(body);
+        await setRecurringAutoBill(uid, v.id, v.enabled);
         break;
       }
       case "setRecurringState": {

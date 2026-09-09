@@ -38,6 +38,8 @@ type RecurringRow = {
     type: string;
     categoryId: string | null;
     defaultWalletId: string | null;
+    autoBillEnabled: boolean;
+    autoBillDay: number | null;
     startCompetence: string;
     endCompetence: string | null;
     paused: boolean;
@@ -744,6 +746,24 @@ export function RecurringManager({
       notify("error", e instanceof Error ? e.message : "Erro ao atualizar.");
     }
   }
+  async function toggleAutoBill(item: RecurringRow) {
+    try {
+      await post({
+        action: "setRecurringAutoBill",
+        id: item.rule.id,
+        enabled: !item.rule.autoBillEnabled,
+      });
+      notify(
+        "success",
+        item.rule.autoBillEnabled
+          ? "Faturamento automático desativado."
+          : "Faturamento automático ativado.",
+      );
+      await load();
+    } catch (e) {
+      notify("error", e instanceof Error ? e.message : "Erro ao atualizar.");
+    }
+  }
   return (
     <div className="page-stack">
       <section className="panel">
@@ -771,6 +791,13 @@ export function RecurringManager({
                     · {x.categoryName ?? "Sem categoria"} ·{" "}
                     {x.walletName ?? "Carteira definida ao faturar"}
                   </small>
+                  <span
+                    className={`auto-bill-badge ${x.rule.autoBillEnabled ? "auto-bill-on" : ""}`}
+                  >
+                    {x.rule.autoBillEnabled
+                      ? `Auto-faturamento · dia ${x.rule.autoBillDay}`
+                      : "Auto-faturamento desligado"}
+                  </span>
                 </div>
                 <strong
                   className={
@@ -780,6 +807,12 @@ export function RecurringManager({
                   {cash(x.rule.defaultAmountCents, visible)}
                 </strong>
                 <div className="row-actions">
+                  <button
+                    className="text-button"
+                    onClick={() => void toggleAutoBill(x)}
+                  >
+                    {x.rule.autoBillEnabled ? "Desativar auto" : "Ativar auto"}
+                  </button>
                   <button className="text-button" onClick={() => setEditing(x)}>
                     Editar
                   </button>
@@ -842,7 +875,9 @@ function RecurringModal({
   done: () => Promise<void>;
 }) {
   const notify = useNotifications(),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [autoBill, setAutoBill] = useState(item.rule.autoBillEnabled),
+    [autoBillDay, setAutoBillDay] = useState(item.rule.autoBillDay ?? 10);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -856,6 +891,8 @@ function RecurringModal({
         type: f.get("type"),
         categoryId: f.get("categoryId") || null,
         walletId: f.get("walletId") || null,
+        autoBillEnabled: autoBill,
+        autoBillDay,
         startCompetence: `${f.get("startCompetence")}-01`,
         endCompetence: f.get("endCompetence")
           ? `${f.get("endCompetence")}-01`
@@ -912,6 +949,7 @@ function RecurringModal({
             <select
               name="walletId"
               defaultValue={item.rule.defaultWalletId ?? ""}
+              required={autoBill}
             >
               <option value="">Definir ao faturar</option>
               {wallets.map((x) => (
@@ -949,6 +987,30 @@ function RecurringModal({
               defaultValue={item.rule.endCompetence?.slice(0, 7) ?? ""}
             />
           </label>
+        </div>
+        <div className="schedule-automation-settings">
+          <label className="schedule-end-toggle">
+            <input
+              type="checkbox"
+              checked={autoBill}
+              onChange={(event) => setAutoBill(event.target.checked)}
+            />
+            <span aria-hidden="true" />
+            <b>Faturar automaticamente</b>
+          </label>
+          {autoBill && (
+            <label className="field auto-bill-day-field">
+              <span>Dia do faturamento</span>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                value={autoBillDay}
+                onChange={(event) => setAutoBillDay(Number(event.target.value))}
+                required
+              />
+            </label>
+          )}
         </div>
         <div className="confirm-actions">
           <button type="button" className="cancel-button" onClick={close}>

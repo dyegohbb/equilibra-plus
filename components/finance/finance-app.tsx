@@ -340,21 +340,14 @@ export function FinanceApp({
               )}{" "}
               {tab === "wallets" && <Manage data={data} mutate={mutate} />}{" "}
               {tab === "scheduled" && (
-                <>
-                  <Schedules
-                    rows={data.scheduled}
-                    wallets={wallets}
-                    categories={categories}
-                    competence={competence}
-                    mutate={mutate}
-                  />
-                  <RecurringManager
-                    wallets={wallets}
-                    categories={categories}
-                    competence={competence}
-                    visible={balancesVisible}
-                  />
-                </>
+                <ScheduledWorkspace
+                  rows={data.scheduled}
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  mutate={mutate}
+                  visible={balancesVisible}
+                />
               )}{" "}
               {tab === "cards" && (
                 <Cards
@@ -1413,6 +1406,62 @@ function ManageRow({
     </div>
   );
 }
+function ScheduledWorkspace({
+  rows,
+  wallets,
+  categories,
+  competence,
+  mutate,
+  visible,
+}: {
+  rows: Scheduled[];
+  wallets: Wallet[];
+  categories: Category[];
+  competence: string;
+  mutate: (p: Record<string, unknown>) => Promise<void>;
+  visible: boolean;
+}) {
+  const [view, setView] = useState<"pending" | "recurring">("pending");
+  return (
+    <div className="scheduled-workspace">
+      <div className="scheduled-tabs" role="tablist" aria-label="Programados">
+        <button
+          role="tab"
+          aria-selected={view === "pending"}
+          className={view === "pending" ? "active" : ""}
+          onClick={() => setView("pending")}
+        >
+          Pendentes da competência
+          <span>{rows.filter((x) => x.entry.status === "PENDING").length}</span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === "recurring"}
+          className={view === "recurring" ? "active" : ""}
+          onClick={() => setView("recurring")}
+        >
+          Todas as recorrências
+        </button>
+      </div>
+      {view === "pending" ? (
+        <Schedules
+          rows={rows}
+          wallets={wallets}
+          categories={categories}
+          competence={competence}
+          mutate={mutate}
+        />
+      ) : (
+        <RecurringManager
+          wallets={wallets}
+          categories={categories}
+          competence={competence}
+          visible={visible}
+        />
+      )}
+    </div>
+  );
+}
 function Schedules({
   rows,
   wallets,
@@ -1429,6 +1478,8 @@ function Schedules({
   const [deleting, setDeleting] = useState<Scheduled | null>(null),
     [billing, setBilling] = useState<Scheduled | null>(null),
     [hasEnd, setHasEnd] = useState(false),
+    [autoBill, setAutoBill] = useState(false),
+    [autoBillDay, setAutoBillDay] = useState(10),
     [startCompetence, setStartCompetence] = useState(competence.slice(0, 7)),
     [endCompetence, setEndCompetence] = useState(nextMonth);
   const notify = useNotifications();
@@ -1444,11 +1495,14 @@ function Schedules({
         type: f.get("type"),
         categoryId: f.get("categoryId") || undefined,
         walletId: f.get("walletId") || undefined,
+        autoBillEnabled: autoBill,
+        autoBillDay,
         startCompetence: `${startCompetence}-01`,
         endCompetence: hasEnd ? `${endCompetence}-01` : undefined,
       });
       e.currentTarget.reset();
       setHasEnd(false);
+      setAutoBill(false);
     } catch {}
   }
   function openBill(x: Scheduled) {
@@ -1512,7 +1566,7 @@ function Schedules({
                 </select>
               </Field>
               <Field label="Carteira padrão">
-                <select name="walletId">
+                <select name="walletId" required={autoBill}>
                   <option value="">Definir somente ao faturar</option>
                   {wallets.map((wallet) => (
                     <option value={wallet.id} key={wallet.id}>
@@ -1551,6 +1605,35 @@ function Schedules({
                     min={startCompetence}
                     value={endCompetence}
                     onChange={(event) => setEndCompetence(event.target.value)}
+                    required
+                  />
+                </Field>
+              )}
+            </div>
+            <div className="schedule-automation-settings">
+              <div className="schedule-setting-heading">
+                <div>
+                  <strong>Faturamento automático</strong>
+                  <InfoTip text="Na data escolhida, a ocorrência pendente é lançada automaticamente na carteira padrão. Pode ser ligado ou desligado individualmente em cada recorrência." />
+                </div>
+                <label className="schedule-end-toggle">
+                  <input
+                    type="checkbox"
+                    checked={autoBill}
+                    onChange={(event) => setAutoBill(event.target.checked)}
+                  />
+                  <span aria-hidden="true" />
+                  <b>{autoBill ? "Ativado" : "Desativado"}</b>
+                </label>
+              </div>
+              {autoBill && (
+                <Field label="Dia do faturamento automático">
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={autoBillDay}
+                    onChange={(event) => setAutoBillDay(Number(event.target.value))}
                     required
                   />
                 </Field>
