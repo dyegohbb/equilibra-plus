@@ -24,8 +24,9 @@
 .spinner-small { width:16px; height:16px; }.spinner-medium { width:24px; height:24px; }.spinner-large { width:38px; height:38px; border-width:3px; }
 @keyframes spinner-rotate { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:1.5s; } }
-.loading-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; color:#62d59a; text-align:center; }.loading-state>span:last-child { color:var(--muted); font-size:13px; }
-.full-page-loading { min-height:100svh; display:grid; place-items:center; background:#070807; }
+.loading-overlay { position:fixed; z-index:1000; inset:0; display:grid; place-items:center; padding:20px; background:rgba(3,7,5,.38); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); cursor:wait; }
+.loading-modal { display:flex; width:min(88vw,340px); min-height:180px; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:28px; border:1px solid rgba(72,211,139,.32); border-radius:20px; color:#62d59a; text-align:center; background:rgba(13,18,15,.96); box-shadow:0 24px 80px rgba(0,0,0,.58); }
+.loading-modal strong { color:#f2f7f4; font-size:16px; line-height:1.35; }.loading-modal>span:last-child { color:var(--muted); font-size:13px; }
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif; }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }

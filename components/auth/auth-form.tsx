@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth/client";
-import { Spinner } from "@/components/ui/spinner";
+import { LoadingState } from "@/components/ui/spinner";
 import { setNextPageNotification, useNotifications } from "@/components/ui/notifications";
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -65,6 +65,7 @@ export function AuthForm({ mode, available }: { mode: "sign-in" | "sign-up"; ava
   }
 
   return <>
+    {busy && <LoadingState label={status === "loading" ? "Autenticando…" : "Abrindo sua área…"} />}
     <div className="form-heading">
       <p className="eyebrow">{signUp ? "SEU PRIMEIRO PASSO" : "BOM TER VOCÊ AQUI"}</p>
       <h1>{signUp ? "Crie sua conta" : "Bem-vindo de volta"}</h1>
@@ -83,7 +84,6 @@ export function AuthForm({ mode, available }: { mode: "sign-in" | "sign-up"; ava
           <input id="confirm-password" name="confirm-password" type="password" autoComplete="new-password" placeholder="Repita sua senha" minLength={8} maxLength={128} required />
         </>}
         <button className="primary-button" type="submit" disabled={busy || !available}>
-          {busy && <Spinner size="small" label={status === "loading" ? "Autenticando" : "Abrindo sua área"} />}
           {status === "loading" ? "Aguarde…" : status === "success" ? "Tudo certo" : signUp ? "Criar conta" : "Entrar"}
           {!busy && <span aria-hidden="true">↗</span>}
         </button>

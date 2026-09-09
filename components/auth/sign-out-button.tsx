@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import { Spinner } from "@/components/ui/spinner";
+import { LoadingState } from "@/components/ui/spinner";
 import { setNextPageNotification, useNotifications } from "@/components/ui/notifications";
 
 export function SignOutButton() {
@@ -27,5 +27,5 @@ export function SignOutButton() {
       setBusy(false);
     }
   }
-  return <div className="sign-out"><button className="primary-button" onClick={signOut} disabled={busy}>{busy && <Spinner size="small" label="Encerrando sessão" />}{busy ? "Saindo…" : "Sair"}{!busy && <span aria-hidden="true">↗</span>}</button>{error && <p role="alert" className="form-message error">{error}</p>}</div>;
+  return <div className="sign-out">{busy && <LoadingState label="Encerrando sua sessão…" />}<button className="primary-button" onClick={signOut} disabled={busy}>{busy ? "Saindo…" : "Sair"}{!busy && <span aria-hidden="true">↗</span>}</button>{error && <p role="alert" className="form-message error">{error}</p>}</div>;
 }

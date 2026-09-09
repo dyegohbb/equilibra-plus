@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Spinner } from "@/components/ui/spinner";
+import { LoadingState } from "@/components/ui/spinner";
 
 export function RefreshButton({
   onRefresh,
@@ -24,23 +24,21 @@ export function RefreshButton({
   }
 
   return (
-    <button
+    <>
+      {busy && <LoadingState label="Atualizando informações…" />}
+      <button
       type="button"
       className={`small-button refresh-button ${compact ? "refresh-button-compact" : ""}`}
       disabled={busy}
       onClick={() => void refresh()}
       aria-label="Atualizar dados"
     >
-      {busy ? (
-        <>
-          <Spinner size="small" label="Atualizando" />
-          {!compact && "Atualizando…"}
-        </>
-      ) : compact ? (
+      {busy ? (!compact && "Atualizando…") : compact ? (
         <>↻</>
       ) : (
         <>↻ Atualizar</>
       )}
-    </button>
+      </button>
+    </>
   );
 }

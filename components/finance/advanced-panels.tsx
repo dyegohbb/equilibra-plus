@@ -357,10 +357,8 @@ export function AdvancedStatement({
             )}
           </div>
         )}
-        {busy && !data ? (
-          <LoadingState label="Carregando extrato…" />
-        ) : (
-          <div className="advanced-list">
+        {busy && <LoadingState label="Carregando extrato…" />}
+        <div className="advanced-list">
             {data?.rows.map((row) => (
               <article className="advanced-row" key={row.transaction.id}>
                 <input
@@ -411,8 +409,7 @@ export function AdvancedStatement({
                   ))}
               </article>
             ))}
-          </div>
-        )}
+        </div>
         <div className="pagination">
           <button disabled={page <= 1} onClick={() => setPage((x) => x - 1)}>
             Anterior
@@ -498,6 +495,7 @@ function SingleTransactionModal({
   }
   return (
     <div className="modal-backdrop" onMouseDown={close}>
+      {busy && <LoadingState label="Salvando alterações…" />}
       <form
         className="confirm-modal edit-modal"
         onSubmit={submit}
@@ -623,6 +621,7 @@ function InstallmentModal({
   }
   return (
     <div className="modal-backdrop" onMouseDown={close}>
+      {busy && <LoadingState label="Atualizando as parcelas…" />}
       <form
         className="confirm-modal edit-modal"
         onSubmit={submit}
@@ -774,10 +773,8 @@ export function RecurringManager({
           </div>
           <RefreshButton onRefresh={load} />
         </div>
-        {busy ? (
-          <LoadingState label="Carregando recorrências…" />
-        ) : (
-          <div className="advanced-list">
+        {busy && <LoadingState label="Carregando recorrências…" />}
+        <div className="advanced-list">
             {rows.map((x) => (
               <article className="advanced-row" key={x.rule.id}>
                 <div>
@@ -840,8 +837,7 @@ export function RecurringManager({
                 </div>
               </article>
             ))}
-          </div>
-        )}
+        </div>
       </section>
       {editing && (
         <RecurringModal
@@ -911,6 +907,7 @@ function RecurringModal({
   }
   return (
     <div className="modal-backdrop" onMouseDown={close}>
+      {busy && <LoadingState label="Atualizando a recorrência…" />}
       <form
         className="confirm-modal edit-modal"
         onSubmit={submit}
@@ -1093,10 +1090,8 @@ export function ReportsPanel({ categories, competence, visible }: Options) {
             onChange={(e) => setTo(e.target.value)}
           />
         </div>
-        {busy ? (
-          <LoadingState label="Calculando relatórios…" />
-        ) : (
-          <>
+        {busy && <LoadingState label="Calculando relatórios…" />}
+        <>
             <div className="report-grid">
               <ReportCard
                 title="Fluxo de caixa"
@@ -1149,8 +1144,7 @@ export function ReportsPanel({ categories, competence, visible }: Options) {
                 </div>
               ))}
             </section>
-          </>
-        )}
+        </>
       </section>
     </div>
   );
@@ -1321,10 +1315,8 @@ export function GoalsPanel({ visible }: Options) {
           <button>Criar meta</button>
         </form>
       </section>
-      {busy ? (
-        <LoadingState label="Carregando metas…" />
-      ) : (
-        <div className="goal-grid">
+      {busy && <LoadingState label="Carregando metas…" />}
+      <div className="goal-grid">
           {rows.map((x) => (
             <article
               className={`panel goal-card ${x.goal.active ? "" : "goal-archived"}`}
@@ -1376,8 +1368,7 @@ export function GoalsPanel({ visible }: Options) {
               )}
             </article>
           ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

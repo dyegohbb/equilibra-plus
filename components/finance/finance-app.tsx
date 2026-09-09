@@ -235,7 +235,7 @@ export function FinanceApp({
         }),
         j = await r.json();
       if (!r.ok) throw new Error(j.error);
-      await load();
+      await load(true);
       notify(
         "success",
         successMessages[String(p.action)] ?? "Alteração salva com sucesso.",
@@ -253,21 +253,11 @@ export function FinanceApp({
   }
   const wallets = data?.wallets.filter((x) => x.active) ?? [],
     categories = data?.categories.filter((x) => x.active) ?? [];
-  if (actionBusy)
-    return (
-      <div className="full-page-loading">
-        <LoadingState label="Salvando suas alterações…" />
-      </div>
-    );
-  if (loading)
-    return (
-      <div className="full-page-loading">
-        <LoadingState label="Carregando seus números…" />
-      </div>
-    );
   return (
     <BalanceVisibilityContext.Provider value={balancesVisible}>
       <div className="finance-shell">
+        {actionBusy && <LoadingState label="Salvando suas alterações…" />}
+        {loading && <LoadingState label="Carregando seus números…" />}
         <aside className="sidebar">
           <Brand />
           <Nav tab={tab} setTab={setTab} />
@@ -307,8 +297,7 @@ export function FinanceApp({
             <Nav tab={tab} setTab={setTab} />
           </div>
           {error && <p className="app-alert">{error}</p>}
-          {loading && <div className="panel">Organizando seus números…</div>}
-          {data && !loading && (
+          {data && (
             <>
               {[
                 "dashboard",
