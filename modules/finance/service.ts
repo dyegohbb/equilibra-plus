@@ -85,6 +85,7 @@ export async function getFinanceData(userId: string, competence: string) {
         entry: scheduledEntries,
         categoryName: categories.name,
         defaultWalletId: scheduledRules.defaultWalletId,
+        walletName: wallets.name,
       })
       .from(scheduledEntries)
       .leftJoin(
@@ -99,6 +100,13 @@ export async function getFinanceData(userId: string, competence: string) {
         and(
           eq(scheduledRules.categoryId, categories.id),
           eq(categories.userId, userId),
+        ),
+      )
+      .leftJoin(
+        wallets,
+        and(
+          eq(scheduledRules.defaultWalletId, wallets.id),
+          eq(wallets.userId, userId),
         ),
       )
       .where(
@@ -204,6 +212,7 @@ export async function getFinanceData(userId: string, competence: string) {
         amountCents: scheduledEntries.expectedAmountCents,
         competence: scheduledEntries.competence,
         categoryName: categories.name,
+        walletName: wallets.name,
       })
       .from(scheduledEntries)
       .leftJoin(
@@ -218,6 +227,13 @@ export async function getFinanceData(userId: string, competence: string) {
         and(
           eq(scheduledRules.categoryId, categories.id),
           eq(categories.userId, userId),
+        ),
+      )
+      .leftJoin(
+        wallets,
+        and(
+          eq(scheduledRules.defaultWalletId, wallets.id),
+          eq(wallets.userId, userId),
         ),
       )
       .where(
@@ -373,12 +389,13 @@ export async function getFinanceData(userId: string, competence: string) {
     dashboardBreakdown: {
       currentScheduled: scheduleRows
         .filter(({ entry }) => entry.status === "PENDING")
-        .map(({ entry, categoryName }) => ({
+        .map(({ entry, categoryName, walletName }) => ({
           id: entry.id,
           description: entry.description,
           amountCents: entry.expectedAmountCents,
           competence: entry.competence,
           categoryName,
+          walletName,
         })),
       previousScheduled: previousScheduleRows,
       cardCompetences: cardCompetenceRows.filter((row) => row.amountCents !== 0),

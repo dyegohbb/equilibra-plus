@@ -65,6 +65,7 @@ type Scheduled = {
   };
   categoryName: string | null;
   defaultWalletId: string | null;
+  walletName: string | null;
 };
 type Data = {
   competence: string;
@@ -120,6 +121,7 @@ type DashboardSource = {
   amountCents: number;
   competence: string;
   categoryName: string | null;
+  walletName: string | null;
 };
 type Tab =
   | "dashboard"
@@ -437,12 +439,31 @@ function Dashboard({ data }: { data: Data }) {
   const selectedCompetence = data.competence;
   const currentCardRows = breakdown.cardCompetences.filter((row) => row.competence === selectedCompetence);
   const previousCardRows = breakdown.cardCompetences.filter((row) => row.competence !== selectedCompetence);
-  const currentCardBalance = currentCardRows.reduce((sum, row) => sum + row.amountCents, 0);
-  const previousCardBalance = previousCardRows.reduce((sum, row) => sum + row.amountCents, 0);
-  const currentScheduledBalance = breakdown.currentScheduled.reduce((sum, row) => sum + row.amountCents, 0);
-  const previousScheduledBalance = breakdown.previousScheduled.reduce((sum, row) => sum + row.amountCents, 0);
-  const currentImpact = currentCardBalance + currentScheduledBalance;
-  const previousImpact = previousCardBalance + previousScheduledBalance;
+  const realizedExpenses = groupDashboardSources(
+    data.transactions.filter((row) => row.transaction.type === "EXPENSE" && row.transaction.amountCents < 0),
+    (row) => row.walletName,
+    (row) => row.transaction.amountCents,
+  );
+  const realizedIncome = groupDashboardSources(
+    data.transactions.filter((row) => row.transaction.amountCents > 0 && !["TRANSFER", "CARD_PAYMENT"].includes(row.transaction.type)),
+    (row) => row.walletName,
+    (row) => row.transaction.amountCents,
+  );
+  const plannedExpenses = groupDashboardSources(
+    breakdown.currentScheduled.filter((row) => row.amountCents < 0),
+    (row) => row.walletName ?? "Carteira a definir",
+    (row) => row.amountCents,
+  );
+  const plannedIncome = groupDashboardSources(
+    breakdown.currentScheduled.filter((row) => row.amountCents > 0),
+    (row) => row.walletName ?? "Carteira a definir",
+    (row) => row.amountCents,
+  );
+  const previousScheduled = groupDashboardSources(
+    breakdown.previousScheduled,
+    (row) => `${comp(row.competence)} · ${row.walletName ?? "Carteira a definir"}`,
+    (row) => row.amountCents,
+  );
   const categoryTotal = data.categoryExpenses.reduce(
     (sum, item) => sum + item.amountCents,
     0,
@@ -464,14 +485,16 @@ function Dashboard({ data }: { data: Data }) {
             <Money value={s.projectedAvailableBalanceCents} />
           </strong>
         </div>
-        <div className="consolidated-equation">
+        <div className="consolidated-equation financial-position-equation">
           <ConsolidatedTerm label="Saldo disponível" value={s.availableBalanceCents} tip="Dinheiro efetivamente existente nas carteiras do tipo conta até a competência selecionada." />
           <span className="equation-operator">+</span>
-          <ConsolidatedTerm label="Impacto do mês" value={currentImpact} tip="Programações pendentes e movimentações líquidas dos cartões na competência atual." />
+          <ConsolidatedTerm label="Posição dos cartões" value={s.cardBalanceCents} tip="Saldo acumulado dos cartões. Negativo representa dívida; positivo representa crédito a favor." />
           <span className="equation-operator">+</span>
-          <ConsolidatedTerm label="Impacto anterior" value={previousImpact} tip="Programações ainda pendentes e movimentações líquidas dos cartões das competências anteriores." />
+          <ConsolidatedTerm label="Entradas pendentes" value={s.pendingIncomeAccumulatedCents} tip="Todas as entradas programadas pendentes, do mês atual e de meses anteriores." />
+          <span className="equation-operator">−</span>
+          <ConsolidatedTerm label="Saídas pendentes" value={-s.pendingExpenseAccumulatedCents} tip="Todas as despesas programadas pendentes, do mês atual e de meses anteriores." />
           <span className="equation-operator">=</span>
-          <ConsolidatedTerm label="Saldo consolidado" value={s.projectedAvailableBalanceCents} featured tip="Resultado auditável: saldo disponível somado aos impactos líquidos atuais e anteriores." />
+          <ConsolidatedTerm label="Dinheiro vai dar?" value={s.projectedAvailableBalanceCents} featured tip="Quanto restará depois de considerar saldo das contas, posição dos cartões e tudo que ainda está programado." />
         </div>
       </section>
       <section className="dashboard-analysis-grid">
@@ -486,28 +509,31 @@ function Dashboard({ data }: { data: Data }) {
           <small>Realizado <Money value={s.incomeCents} /> · Programado <Money value={s.pendingCurrentIncomeCents} /></small>
         </article>
         <article className="analysis-total">
-          <div className="label-with-info"><span>Pendências anteriores</span><InfoTip text="Resultado líquido de todas as programações anteriores que continuam pendentes." /></div>
-          <strong className={previousScheduledBalance < 0 ? "negative" : "positive"}><Money value={previousScheduledBalance} /></strong>
+          <div className="label-with-info"><span>Programados anteriores</span><InfoTip text="Resultado líquido das entradas e saídas programadas em competências anteriores que continuam pendentes." /></div>
+          <strong className={s.pendingPreviousIncomeCents - s.pendingPreviousExpenseCents < 0 ? "negative" : "positive"}><Money value={s.pendingPreviousIncomeCents - s.pendingPreviousExpenseCents} /></strong>
           <small>{breakdown.previousScheduled.length} itens não resolvidos</small>
         </article>
         <article className="analysis-total">
           <div className="label-with-info"><span>Cartões acumulados</span><InfoTip text="Soma com sinal de todas as competências dos cartões. Valor negativo reduz o saldo; valor positivo aumenta." /></div>
           <strong className={s.cardBalanceCents < 0 ? "negative" : "positive"}><Money value={s.cardBalanceCents} /></strong>
-          <small>Atual <Money value={currentCardBalance} /> · Anteriores <Money value={previousCardBalance} /></small>
+          <small>Saldo líquido de todos os cartões até {comp(selectedCompetence)}</small>
         </article>
       </section>
       <section className="dashboard-ledgers">
-        <DashboardLedger title="Despesas do mês" tip="Cada saída que forma o total mensal: lançamentos já faturados mais programações negativas ainda pendentes." total={-breakdown.currentExpenseTotalCents}>
-          {data.transactions.filter((row) => row.transaction.type === "EXPENSE" && row.transaction.amountCents < 0).map((row) => <DashboardLedgerRow key={row.transaction.id} label={row.transaction.description} meta={`Faturado · ${row.categoryName ?? row.walletName}`} value={row.transaction.amountCents} />)}
-          {breakdown.currentScheduled.filter((row) => row.amountCents < 0).map((row) => <DashboardLedgerRow key={row.id} label={row.description} meta={`Programado · ${row.categoryName ?? "Sem categoria"}`} value={row.amountCents} />)}
+        <DashboardLedger title="Origem das despesas" tip="Composição do total de despesas do mês agrupada por carteira, sem mostrar lançamentos individuais." total={-breakdown.currentExpenseTotalCents}>
+          <DashboardSourceSection title="Faturado" total={-s.expenseCents} rows={realizedExpenses} />
+          <DashboardSourceSection title="Programado" total={-s.pendingCurrentExpenseCents} rows={plannedExpenses} />
         </DashboardLedger>
-        <DashboardLedger title="Impacto atual no saldo" tip="Componentes ainda não absorvidos pelo saldo disponível: programações pendentes e saldo líquido dos cartões no mês." total={currentImpact}>
-          {breakdown.currentScheduled.map((row) => <DashboardLedgerRow key={row.id} label={row.description} meta={`Programado · ${row.categoryName ?? "Sem categoria"}`} value={row.amountCents} />)}
-          {currentCardRows.map((row) => <DashboardLedgerRow key={`${row.walletId}-${row.competence}`} label={row.walletName} meta={`Cartão · ${comp(row.competence)}`} value={row.amountCents} />)}
+        <DashboardLedger title="Origem das entradas" tip="Composição do total de entradas do mês agrupada por carteira, separando realizado e programado." total={breakdown.currentIncomeTotalCents}>
+          <DashboardSourceSection title="Realizado" total={s.incomeCents} rows={realizedIncome} />
+          <DashboardSourceSection title="Programado" total={s.pendingCurrentIncomeCents} rows={plannedIncome} />
         </DashboardLedger>
-        <DashboardLedger title="Competências anteriores" tip="Programações não faturadas e resultados mensais dos cartões anteriores. Linhas zeradas são ocultadas." total={previousImpact}>
-          {breakdown.previousScheduled.map((row) => <DashboardLedgerRow key={row.id} label={row.description} meta={`Programado pendente · ${comp(row.competence)} · ${row.categoryName ?? "Sem categoria"}`} value={row.amountCents} />)}
-          {previousCardRows.map((row) => <DashboardLedgerRow key={`${row.walletId}-${row.competence}`} label={row.walletName} meta={`Cartão · ${comp(row.competence)}`} value={row.amountCents} />)}
+        <DashboardLedger title="Pendências anteriores" tip="Programações antigas ainda abertas, agrupadas por competência e carteira." total={s.pendingPreviousIncomeCents - s.pendingPreviousExpenseCents}>
+          <DashboardSourceSection title="Programados não resolvidos" total={s.pendingPreviousIncomeCents - s.pendingPreviousExpenseCents} rows={previousScheduled} />
+        </DashboardLedger>
+        <DashboardLedger title="Posição dos cartões" tip="Composição mensal dos cartões. Meses anteriores aparecem somente quando o resultado é diferente de zero." total={s.cardBalanceCents}>
+          <DashboardSourceSection title={`Competência atual · ${comp(selectedCompetence)}`} total={currentCardRows.reduce((sum, row) => sum + row.amountCents, 0)} rows={currentCardRows.map((row) => ({ label: row.walletName, value: row.amountCents }))} />
+          {previousCardRows.length > 0 && <DashboardSourceSection title="Competências anteriores" total={previousCardRows.reduce((sum, row) => sum + row.amountCents, 0)} rows={previousCardRows.map((row) => ({ label: `${comp(row.competence)} · ${row.walletName}`, value: row.amountCents }))} />}
         </DashboardLedger>
       </section>
       <section className="panel category-overview">
@@ -548,7 +574,9 @@ function Dashboard({ data }: { data: Data }) {
 }
 function ConsolidatedTerm({ label, value, tip, featured = false }: { label: string; value: number; tip: string; featured?: boolean }) { return <article className={`consolidated-term ${featured ? "featured" : ""}`}><div className="label-with-info"><span>{label}</span><InfoTip text={tip} /></div><strong className={value < 0 ? "negative" : "positive"}><Money value={value} /></strong></article>; }
 function DashboardLedger({ title, tip, total, children }: { title: string; tip: string; total: number; children: ReactNode }) { return <article className="panel dashboard-ledger"><header><div><div className="label-with-info"><h2>{title}</h2><InfoTip text={tip} /></div><span>Composição detalhada</span></div><strong className={total < 0 ? "negative" : "positive"}><Money value={total} /></strong></header><div className="ledger-list">{children}<p className="ledger-empty">Nenhum item diferente de zero.</p></div></article>; }
-function DashboardLedgerRow({ label, meta, value }: { label: string; meta: string; value: number }) { if (value === 0) return null; return <div className="ledger-row"><div><b>{label}</b><small>{meta}</small></div><strong className={value < 0 ? "negative" : "positive"}><Money value={value} /></strong></div>; }
+type DashboardGroup = { label: string; value: number };
+function groupDashboardSources<T>(rows: T[], label: (row: T) => string, value: (row: T) => number) { return Array.from(rows.reduce((groups, row) => { const key = label(row); groups.set(key, (groups.get(key) ?? 0) + value(row)); return groups; }, new Map<string, number>()), ([name, amount]) => ({ label: name, value: amount })).filter((row) => row.value !== 0).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)); }
+function DashboardSourceSection({ title, total, rows }: { title: string; total: number; rows: DashboardGroup[] }) { if (!rows.length && total === 0) return null; return <section className="ledger-source-section"><header><span>{title}</span><strong className={total < 0 ? "negative" : "positive"}><Money value={total} /></strong></header>{rows.map((row) => <div className="ledger-row" key={row.label}><b>{row.label}</b><strong className={row.value < 0 ? "negative" : "positive"}><Money value={row.value} /></strong></div>)}</section>; }
 function New({
   wallets,
   categories,
