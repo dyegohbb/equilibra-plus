@@ -197,6 +197,29 @@ export function FinanceApp({
   useEffect(() => {
     queueMicrotask(() => void load());
   }, [load]);
+  const refreshCategories = useCallback(async () => {
+    try {
+      const response = await fetch("/api/finance?resource=categories", {
+          cache: "no-store",
+        }),
+        result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Não foi possível atualizar categorias.");
+      setData((currentData) =>
+        currentData
+          ? { ...currentData, categories: result.categories }
+          : currentData,
+      );
+    } catch (cause) {
+      notify(
+        "error",
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível atualizar categorias.",
+      );
+      throw cause;
+    }
+  }, [notify]);
   async function mutate(p: Record<string, unknown>) {
     setActionBusy(true);
     try {
@@ -284,7 +307,6 @@ export function FinanceApp({
             <>
               {[
                 "dashboard",
-                "new",
                 "wallets",
                 "scheduled",
                 "cards",
@@ -299,6 +321,7 @@ export function FinanceApp({
                   wallets={wallets}
                   categories={categories}
                   mutate={mutate}
+                  refreshCategories={refreshCategories}
                   done={() => setTab("transactions")}
                 />
               )}{" "}
@@ -613,11 +636,13 @@ function New({
   wallets,
   categories,
   mutate,
+  refreshCategories,
   done,
 }: {
   wallets: Wallet[];
   categories: Category[];
   mutate: (p: Record<string, unknown>) => Promise<void>;
+  refreshCategories: () => Promise<void>;
   done: () => void;
 }) {
   type QueuedPurchase = {
@@ -632,6 +657,7 @@ function New({
     mode: "CASH" | "INSTALLMENT_VALUE" | "TOTAL_VALUE";
     quantity?: number;
   };
+  const notify = useNotifications();
   const [wid, setWid] = useState(wallets[0]?.id ?? ""),
     [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE"),
     [mode, setMode] = useState<"CASH" | "INSTALLMENT_VALUE" | "TOTAL_VALUE">(
@@ -643,6 +669,7 @@ function New({
     [purchaseCompetence, setPurchaseCompetence] = useState(nextMonth),
     [queue, setQueue] = useState<QueuedPurchase[]>([]),
     [error, setError] = useState(""),
+    [categoryBusy, setCategoryBusy] = useState(false),
     [categoryOpen, setCategoryOpen] = useState(false);
   const preview = useMemo(() => {
     try {
@@ -719,14 +746,33 @@ function New({
   async function createCategory(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    setCategoryBusy(true);
     try {
-      await mutate({
-        action: "createCategory",
-        name: f.get("name"),
-        type: f.get("type"),
-      });
+      const response = await fetch("/api/finance", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "createCategory",
+            name: f.get("name"),
+            type: f.get("type"),
+          }),
+        }),
+        result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Não foi possível criar a categoria.");
+      await refreshCategories();
+      notify("success", "Categoria criada.");
       setCategoryOpen(false);
-    } catch {}
+    } catch (cause) {
+      notify(
+        "error",
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível criar a categoria.",
+      );
+    } finally {
+      setCategoryBusy(false);
+    }
   }
   if (!wallets.length) return <Empty text="Cadastre primeiro uma carteira." />;
   return (
@@ -780,13 +826,17 @@ function New({
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => setCategoryOpen(true)}
-                aria-label="Criar uma categoria"
-              >
-                ＋
-              </button>
+              <div className="category-inline-actions">
+                <button
+                  type="button"
+                  className="category-add-button"
+                  onClick={() => setCategoryOpen(true)}
+                  aria-label="Criar uma categoria"
+                >
+                  ＋
+                </button>
+                <RefreshButton onRefresh={refreshCategories} compact />
+              </div>
             </div>
           </Field>
           <Field label="Data de consumo">
@@ -938,8 +988,15 @@ function New({
               >
                 Cancelar
               </button>
-              <button className="action-button modal-save">
-                Criar categoria
+              <button
+                className="action-button modal-save"
+                disabled={categoryBusy}
+              >
+                {categoryBusy ? (
+                  <LoadingState label="Criando categoria…" />
+                ) : (
+                  "Criar categoria"
+                )}
               </button>
             </div>
           </form>

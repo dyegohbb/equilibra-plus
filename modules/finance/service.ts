@@ -22,6 +22,14 @@ import {
 type TransactionKind = "INCOME" | "EXPENSE";
 const now = () => new Date();
 
+export async function getCategories(userId: string) {
+  return getDb()
+    .select()
+    .from(categories)
+    .where(eq(categories.userId, userId))
+    .orderBy(desc(categories.active), asc(categories.name));
+}
+
 export async function getFinanceData(userId: string, competence: string) {
   const db = getDb();
   const [

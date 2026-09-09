@@ -9,6 +9,7 @@ import {
   createScheduledRule,
   createWallet,
   deleteScheduledRule,
+  getCategories,
   getFinanceData,
   payCreditCard,
   removeTransaction,
@@ -45,7 +46,10 @@ async function userId() {
 export async function GET(request: Request) {
   try {
     const uid = await userId();
-    const competence = new URL(request.url).searchParams.get("competence");
+    const params = new URL(request.url).searchParams;
+    if (params.get("resource") === "categories")
+      return Response.json({ categories: await getCategories(uid) });
+    const competence = params.get("competence");
     if (!competence || !/^\d{4}-\d{2}-01$/.test(competence))
       return Response.json({ error: "Competência inválida." }, { status: 400 });
     return Response.json(await getFinanceData(uid, competence));
