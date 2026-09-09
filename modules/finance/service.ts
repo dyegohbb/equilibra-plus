@@ -15,7 +15,6 @@ import {
   calculateCompetence,
   calculateInstallmentCompetences,
   calculateInstallments,
-  calculateProjectedBalance,
   type InstallmentMode,
 } from "./domain";
 
@@ -42,6 +41,8 @@ export async function getFinanceData(userId: string, competence: string) {
     reservedRows,
     cardInvoiceRows,
     monthSummaryRows,
+    previousScheduleRows,
+    cardCompetenceRows,
   ] = await Promise.all([
     db
       .select()
@@ -196,6 +197,63 @@ export async function getFinanceData(userId: string, competence: string) {
           isNull(transactions.deletedAt),
         ),
       ),
+    db
+      .select({
+        id: scheduledEntries.id,
+        description: scheduledEntries.description,
+        amountCents: scheduledEntries.expectedAmountCents,
+        competence: scheduledEntries.competence,
+        categoryName: categories.name,
+      })
+      .from(scheduledEntries)
+      .leftJoin(
+        scheduledRules,
+        and(
+          eq(scheduledEntries.scheduledRuleId, scheduledRules.id),
+          eq(scheduledRules.userId, userId),
+        ),
+      )
+      .leftJoin(
+        categories,
+        and(
+          eq(scheduledRules.categoryId, categories.id),
+          eq(categories.userId, userId),
+        ),
+      )
+      .where(
+        and(
+          eq(scheduledEntries.userId, userId),
+          eq(scheduledEntries.status, "PENDING"),
+          sql`${scheduledEntries.competence}<${competence}`,
+        ),
+      )
+      .orderBy(desc(scheduledEntries.competence), asc(scheduledEntries.description)),
+    db
+      .select({
+        walletId: wallets.id,
+        walletName: wallets.name,
+        competence: transactions.competence,
+        amountCents:
+          sql<number>`coalesce(sum(${transactions.amountCents}),0)`.mapWith(Number),
+      })
+      .from(transactions)
+      .innerJoin(
+        wallets,
+        and(
+          eq(transactions.walletId, wallets.id),
+          eq(wallets.userId, userId),
+          eq(wallets.type, "CREDIT_CARD"),
+        ),
+      )
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          lte(transactions.competence, competence),
+          isNull(transactions.deletedAt),
+        ),
+      )
+      .groupBy(wallets.id, wallets.name, transactions.competence)
+      .orderBy(desc(transactions.competence), asc(wallets.name)),
   ]);
   const incomeCents = monthSummaryRows[0]?.incomeCents ?? 0;
   const expenseCents = monthSummaryRows[0]?.expenseCents ?? 0;
@@ -227,6 +285,9 @@ export async function getFinanceData(userId: string, competence: string) {
       (sum, wallet) => sum + Math.abs(Math.min(wallet.balanceCents, 0)),
       0,
     );
+  const cardBalanceCents = walletBalances
+    .filter((wallet) => wallet.type === "CREDIT_CARD")
+    .reduce((sum, wallet) => sum + wallet.balanceCents, 0);
   const netWorthCents = walletBalances.reduce(
     (sum, wallet) => sum + wallet.balanceCents,
     0,
@@ -259,14 +320,8 @@ export async function getFinanceData(userId: string, competence: string) {
       invoiceCents: Math.abs(invoiceByWallet.get(wallet.id) ?? 0),
       outstandingCents: Math.abs(Math.min(wallet.balanceCents, 0)),
     }));
-  const projectedAvailableBalanceCents = calculateProjectedBalance(
-    availableBalanceCents,
-    pendingCurrentIncomeCents,
-    pendingPreviousIncomeCents,
-    pendingCurrentExpenseCents,
-    pendingPreviousExpenseCents,
-    cardDebtCents,
-  );
+  const projectedAvailableBalanceCents =
+    availableBalanceCents + pendingAccumulatedCents + cardBalanceCents;
   const categoryMap = new Map<string, number>();
   for (const row of transactionRows) {
     if (
@@ -285,6 +340,7 @@ export async function getFinanceData(userId: string, competence: string) {
     amountCents,
   })).sort((a, b) => b.amountCents - a.amountCents);
   return {
+    competence,
     wallets: walletRows,
     walletBalances,
     categories: categoryRows,
@@ -309,10 +365,26 @@ export async function getFinanceData(userId: string, competence: string) {
       reservedCents,
       unreservedBalanceCents,
       cardDebtCents,
+      cardBalanceCents,
       netWorthCents,
     },
     categoryExpenses,
     cards,
+    dashboardBreakdown: {
+      currentScheduled: scheduleRows
+        .filter(({ entry }) => entry.status === "PENDING")
+        .map(({ entry, categoryName }) => ({
+          id: entry.id,
+          description: entry.description,
+          amountCents: entry.expectedAmountCents,
+          competence: entry.competence,
+          categoryName,
+        })),
+      previousScheduled: previousScheduleRows,
+      cardCompetences: cardCompetenceRows.filter((row) => row.amountCents !== 0),
+      currentExpenseTotalCents: expenseCents + pendingCurrentExpenseCents,
+      currentIncomeTotalCents: incomeCents + pendingCurrentIncomeCents,
+    },
   };
 }
 
