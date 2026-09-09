@@ -23,6 +23,7 @@ import {
   AdvancedStatement,
   GoalsPanel,
   PendingPanel,
+  PlanningPanel,
   RecurringManager,
   ReportsPanel,
 } from "@/components/finance/advanced-panels";
@@ -106,6 +107,7 @@ type Tab =
   | "scheduled"
   | "cards"
   | "reports"
+  | "planning"
   | "goals"
   | "pending";
 const brl = new Intl.NumberFormat("pt-BR", {
@@ -130,6 +132,7 @@ const items: [Tab, string][] = [
   ["scheduled", "Programados"],
   ["cards", "Cartões"],
   ["reports", "Relatórios"],
+  ["planning", "Planejamento"],
   ["goals", "Metas"],
   ["pending", "Pendências"],
 ];
@@ -141,6 +144,7 @@ const navIcons: Record<Tab, string> = {
   scheduled: "◷",
   cards: "▰",
   reports: "↗",
+  planning: "⌁",
   goals: "◎",
   pending: "!",
 };
@@ -364,6 +368,14 @@ export function FinanceApp({
               )}{" "}
               {tab === "pending" && (
                 <PendingPanel
+                  wallets={wallets}
+                  categories={categories}
+                  competence={competence}
+                  visible={balancesVisible}
+                />
+              )}
+              {tab === "planning" && (
+                <PlanningPanel
                   wallets={wallets}
                   categories={categories}
                   competence={competence}

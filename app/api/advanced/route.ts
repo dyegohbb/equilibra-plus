@@ -9,6 +9,7 @@ import {
   createGoal,
   getGoals,
   getPendingCenter,
+  getPlanning,
   getRecurringRules,
   getReports,
   getTransactionsPage,
@@ -69,6 +70,16 @@ export async function GET(request: Request) {
           url.searchParams.get("to") || "2026-12-01",
         ),
       );
+    if (mode === "planning") {
+      const today = new Date().toLocaleDateString("en-CA", {
+        timeZone: "America/Recife",
+      });
+      const from = url.searchParams.get("from") || `${today.slice(0, 7)}-01`;
+      const months = Math.min(72, Math.max(1, Number(url.searchParams.get("months")) || 24));
+      if (!/^\d{4}-\d{2}-01$/.test(from))
+        return Response.json({ error: "Competência inicial inválida." }, { status: 422 });
+      return Response.json(await getPlanning(uid, from, months));
+    }
     if (mode === "pending") {
       const today = new Date().toLocaleDateString("en-CA", {
         timeZone: "America/Recife",

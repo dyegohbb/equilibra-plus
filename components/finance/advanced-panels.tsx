@@ -77,6 +77,26 @@ type ReportData = {
   budgets: BudgetReport[];
   reservedCents: number;
 };
+type PlanningMonth = {
+  competence: string;
+  actualIncomeCents: number;
+  actualExpenseCents: number;
+  realBalanceCents: number;
+  cardDebtCents: number;
+  plannedIncomeCents: number;
+  plannedExpenseCents: number;
+  overdueIncomeCents: number;
+  overdueExpenseCents: number;
+  plannedBalanceCents: number;
+  categories: { name: string; actualCents: number; plannedCents: number }[];
+};
+type PlanningData = {
+  from: string;
+  to: string;
+  months: number;
+  timeline: PlanningMonth[];
+  categoryTotals: { name: string; actualCents: number; plannedCents: number }[];
+};
 type GoalRow = {
   goal: {
     id: string;
@@ -1148,6 +1168,149 @@ export function ReportsPanel({ categories, competence, visible }: Options) {
       </section>
     </div>
   );
+}
+
+export function PlanningPanel({ competence, visible }: Options) {
+  const notify = useNotifications();
+  const [from, setFrom] = useState(competence.slice(0, 7));
+  const [months, setMonths] = useState(24);
+  const [data, setData] = useState<PlanningData | null>(null);
+  const [busy, setBusy] = useState(true);
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      setData(
+        await request(
+          `/api/advanced?mode=planning&from=${from}-01&months=${months}`,
+        ),
+      );
+    } catch (error) {
+      notify(
+        "error",
+        error instanceof Error ? error.message : "Erro ao montar planejamento.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [from, months, notify]);
+  useEffect(() => {
+    queueMicrotask(() => void load());
+  }, [load]);
+
+  const timeline = data?.timeline ?? [];
+  const first = timeline[0];
+  const last = timeline.at(-1);
+  const totals = timeline.reduce(
+    (sum, month) => ({
+      income: sum.income + month.plannedIncomeCents + month.overdueIncomeCents,
+      expense: sum.expense + month.plannedExpenseCents + month.overdueExpenseCents,
+      actualIncome: sum.actualIncome + month.actualIncomeCents,
+      actualExpense: sum.actualExpense + month.actualExpenseCents,
+    }),
+    { income: 0, expense: 0, actualIncome: 0, actualExpense: 0 },
+  );
+  const categoryTotals = data?.categoryTotals.slice(0, 8) ?? [];
+
+  return (
+    <div className="page-stack planning-page">
+      {busy && <LoadingState label="Construindo seu planejamento…" />}
+      <section className="planning-header panel">
+        <div>
+          <p className="eyebrow">VISÃO DE PERÍODO</p>
+          <h2>Planejamento financeiro de longo prazo</h2>
+        </div>
+        <div className="planning-controls">
+          <label>
+            <span>Começar em</span>
+            <input type="month" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label>
+            <span>Horizonte</span>
+            <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>
+              <option value={12}>1 ano</option>
+              <option value={24}>2 anos</option>
+              <option value={36}>3 anos</option>
+              <option value={48}>4 anos</option>
+              <option value={60}>5 anos</option>
+              <option value={72}>6 anos</option>
+            </select>
+          </label>
+          <RefreshButton onRefresh={load} />
+        </div>
+      </section>
+
+      <section className="planning-kpis">
+        <PlanningKpi title="Saldo real inicial" value={first?.realBalanceCents ?? 0} visible={visible} tip="Soma do saldo acumulado das contas disponíveis no primeiro mês da visão." />
+        <PlanningKpi title="Dívida real inicial" value={-(first?.cardDebtCents ?? 0)} visible={visible} tone="negative" tip="Total em aberto nos cartões considerando compras e pagamentos lançados até o mês." />
+        <PlanningKpi title="Programado a entrar" value={totals.income} visible={visible} tone="positive" tip="Entradas ainda pendentes durante todo o período, incluindo valores vencidos." />
+        <PlanningKpi title="Programado a sair" value={-totals.expense} visible={visible} tone="negative" tip="Saídas ainda pendentes durante todo o período, incluindo valores vencidos." />
+        <PlanningKpi title="Saldo ao fim do período" value={last?.plannedBalanceCents ?? 0} visible={visible} featured tip="Saldo real projetado após cartões e todas as programações pendentes até o último mês." />
+      </section>
+
+      <section className="panel planning-chart-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">TRAJETÓRIA</p>
+            <h2>Saldo real × saldo planejado</h2>
+          </div>
+          <div className="chart-legend"><span className="real-line">Saldo real</span><span className="planned-line">Saldo planejado</span></div>
+        </div>
+        <PlanningBalanceChart rows={timeline} visible={visible} />
+      </section>
+
+      <section className="panel planning-category-panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">CATEGORIAS</p><h2>Maiores despesas do período</h2></div>
+          <PlanningInfo text="Compara despesas já realizadas com saídas que continuam programadas no período selecionado." />
+        </div>
+        <div className="planning-categories">
+          {categoryTotals.map((category) => (
+            <div className="planning-category" key={category.name}>
+              <b>{category.name}</b>
+              <span>Realizado <strong>{cash(category.actualCents, visible)}</strong></span>
+              <span>Planejado <strong>{cash(category.plannedCents, visible)}</strong></span>
+            </div>
+          ))}
+          {!categoryTotals.length && <p className="muted">Nenhuma despesa categorizada no período.</p>}
+        </div>
+      </section>
+
+      <section className="planning-timeline-section">
+        <div className="section-heading">
+          <div><p className="eyebrow">MÊS A MÊS</p><h2>Linha do tempo horizontal</h2></div>
+          <PlanningInfo text="Arraste horizontalmente para percorrer o período. Cada coluna consolida o realizado, as dívidas e as programações daquela competência." />
+        </div>
+        <div className="planning-timeline" tabIndex={0} aria-label="Planejamento mês a mês">
+          {timeline.map((month) => <PlanningMonthCard key={month.competence} month={month} visible={visible} />)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlanningKpi({ title, value, visible, tip, tone = "", featured = false }: { title: string; value: number; visible: boolean; tip: string; tone?: string; featured?: boolean }) {
+  return <article className={`planning-kpi ${tone} ${featured ? "featured" : ""}`}><div className="label-with-info"><span>{title}</span><PlanningInfo text={tip} /></div><strong>{cash(value, visible)}</strong></article>;
+}
+
+function PlanningInfo({ text }: { text: string }) {
+  return <details className="info-tip"><summary aria-label="Mais informações">i</summary><span role="tooltip">{text}</span></details>;
+}
+
+function PlanningBalanceChart({ rows, visible }: { rows: PlanningMonth[]; visible: boolean }) {
+  if (!rows.length) return <p className="muted">Sem dados para exibir.</p>;
+  const values = rows.flatMap((row) => [row.realBalanceCents, row.plannedBalanceCents]);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const range = Math.max(1, max - min);
+  const width = Math.max(900, rows.length * 52);
+  const point = (value: number, index: number) => `${30 + (index * (width - 60)) / Math.max(1, rows.length - 1)},${20 + ((max - value) / range) * 190}`;
+  const zeroY = 20 + (max / range) * 190;
+  return <div className="planning-chart-scroll"><svg className="planning-chart" viewBox={`0 0 ${width} 250`} role="img" aria-label="Evolução do saldo real e planejado"><line x1="30" x2={width - 30} y1={zeroY} y2={zeroY} className="zero-line" /><polyline points={rows.map((row, index) => point(row.realBalanceCents, index)).join(" ")} className="chart-real" /><polyline points={rows.map((row, index) => point(row.plannedBalanceCents, index)).join(" ")} className="chart-planned" />{rows.map((row, index) => <g key={row.competence}><text x={30 + (index * (width - 60)) / Math.max(1, rows.length - 1)} y="238">{row.competence.slice(5, 7)}/{row.competence.slice(2, 4)}</text><title>{row.competence.slice(0, 7)}: real {cash(row.realBalanceCents, visible)}; planejado {cash(row.plannedBalanceCents, visible)}</title></g>)}</svg></div>;
+}
+
+function PlanningMonthCard({ month, visible }: { month: PlanningMonth; visible: boolean }) {
+  const plannedNet = month.plannedIncomeCents + month.overdueIncomeCents - month.plannedExpenseCents - month.overdueExpenseCents;
+  return <article className="planning-month-card"><header><span>{month.competence.slice(0, 4)}</span><h3>{new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" }).format(new Date(`${month.competence}T00:00:00Z`))}</h3></header><div className="month-result"><span>Saldo planejado <PlanningInfo text="Saldo real menos dívida dos cartões, acrescido das entradas e reduzido pelas saídas programadas acumuladas até este mês." /></span><strong className={month.plannedBalanceCents < 0 ? "negative" : "positive"}>{cash(month.plannedBalanceCents, visible)}</strong></div><dl><div><dt>Saldo real</dt><dd>{cash(month.realBalanceCents, visible)}</dd></div><div><dt>Dívida dos cartões</dt><dd className="negative">{cash(-month.cardDebtCents, visible)}</dd></div><div><dt>Realizado no mês</dt><dd className={month.actualIncomeCents - month.actualExpenseCents < 0 ? "negative" : "positive"}>{cash(month.actualIncomeCents - month.actualExpenseCents, visible)}</dd></div><div><dt>Programado a entrar</dt><dd className="positive">{cash(month.plannedIncomeCents + month.overdueIncomeCents, visible)}</dd></div><div><dt>Programado a sair</dt><dd className="negative">{cash(-(month.plannedExpenseCents + month.overdueExpenseCents), visible)}</dd></div><div><dt>Impacto planejado</dt><dd className={plannedNet < 0 ? "negative" : "positive"}>{cash(plannedNet, visible)}</dd></div></dl>{month.categories.length > 0 && <div className="month-categories"><span>Principais categorias</span>{month.categories.slice(0, 3).map((category) => <small key={category.name}><b>{category.name}</b>{cash(category.actualCents + category.plannedCents, visible)}</small>)}</div>}</article>;
 }
 function ReportCard({
   title,

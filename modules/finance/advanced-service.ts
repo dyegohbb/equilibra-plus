@@ -25,7 +25,12 @@ import {
   transactions,
   wallets,
 } from "@/db/schema";
-import { addMonths, calculateInstallments, scheduledDateForCompetence } from "./domain";
+import {
+  addMonths,
+  calculateInstallments,
+  calculateProjectedBalance,
+  scheduledDateForCompetence,
+} from "./domain";
 
 const now = () => new Date();
 const activeTransaction = isNull(transactions.deletedAt);
@@ -847,6 +852,220 @@ export async function getReports(userId: string, from: string, to: string) {
     budgets: budgetRows,
     reservedCents: reservedRows[0]?.amount ?? 0,
     projection: pendingRows,
+  };
+}
+
+export async function getPlanning(
+  userId: string,
+  from: string,
+  months: number,
+) {
+  const horizon = Math.min(72, Math.max(1, months));
+  const to = addMonths(from, horizon - 1);
+  const db = getDb();
+  const [transactionFlows, monthlyActual, pendingRows, categoryActual, categoryPlanned] =
+    await Promise.all([
+      db
+        .select({
+          competence: transactions.competence,
+          walletType: wallets.type,
+          amountCents:
+            sql<number>`coalesce(sum(${transactions.amountCents}),0)`.mapWith(Number),
+        })
+        .from(transactions)
+        .innerJoin(
+          wallets,
+          and(eq(transactions.walletId, wallets.id), eq(wallets.userId, userId)),
+        )
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            activeTransaction,
+            lte(transactions.competence, to),
+          ),
+        )
+        .groupBy(transactions.competence, wallets.type)
+        .orderBy(transactions.competence),
+      db
+        .select({
+          competence: transactions.competence,
+          incomeCents:
+            sql<number>`coalesce(sum(case when ${transactions.amountCents}>0 and ${transactions.type} not in ('TRANSFER','CARD_PAYMENT') then ${transactions.amountCents} else 0 end),0)`.mapWith(Number),
+          expenseCents:
+            sql<number>`coalesce(sum(case when ${transactions.amountCents}<0 and ${transactions.type} not in ('TRANSFER','CARD_PAYMENT') then -${transactions.amountCents} else 0 end),0)`.mapWith(Number),
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            activeTransaction,
+            gte(transactions.competence, from),
+            lte(transactions.competence, to),
+          ),
+        )
+        .groupBy(transactions.competence),
+      db
+        .select({
+          competence: scheduledEntries.competence,
+          incomeCents:
+            sql<number>`coalesce(sum(case when ${scheduledEntries.expectedAmountCents}>0 then ${scheduledEntries.expectedAmountCents} else 0 end),0)`.mapWith(Number),
+          expenseCents:
+            sql<number>`coalesce(sum(case when ${scheduledEntries.expectedAmountCents}<0 then -${scheduledEntries.expectedAmountCents} else 0 end),0)`.mapWith(Number),
+        })
+        .from(scheduledEntries)
+        .where(
+          and(
+            eq(scheduledEntries.userId, userId),
+            eq(scheduledEntries.status, "PENDING"),
+            lte(scheduledEntries.competence, to),
+          ),
+        )
+        .groupBy(scheduledEntries.competence),
+      db
+        .select({
+          competence: transactions.competence,
+          name: sql<string>`coalesce(${categories.name},'Sem categoria')`,
+          amountCents:
+            sql<number>`coalesce(sum(-${transactions.amountCents}),0)`.mapWith(Number),
+        })
+        .from(transactions)
+        .leftJoin(
+          categories,
+          and(eq(transactions.categoryId, categories.id), eq(categories.userId, userId)),
+        )
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            activeTransaction,
+            eq(transactions.type, "EXPENSE"),
+            sql`${transactions.amountCents}<0`,
+            gte(transactions.competence, from),
+            lte(transactions.competence, to),
+          ),
+        )
+        .groupBy(transactions.competence, transactions.categoryId, categories.name),
+      db
+        .select({
+          competence: scheduledEntries.competence,
+          name: sql<string>`coalesce(${categories.name},'Sem categoria')`,
+          amountCents:
+            sql<number>`coalesce(sum(-${scheduledEntries.expectedAmountCents}),0)`.mapWith(Number),
+        })
+        .from(scheduledEntries)
+        .innerJoin(
+          scheduledRules,
+          and(
+            eq(scheduledEntries.scheduledRuleId, scheduledRules.id),
+            eq(scheduledRules.userId, userId),
+          ),
+        )
+        .leftJoin(
+          categories,
+          and(eq(scheduledRules.categoryId, categories.id), eq(categories.userId, userId)),
+        )
+        .where(
+          and(
+            eq(scheduledEntries.userId, userId),
+            eq(scheduledEntries.status, "PENDING"),
+            sql`${scheduledEntries.expectedAmountCents}<0`,
+            gte(scheduledEntries.competence, from),
+            lte(scheduledEntries.competence, to),
+          ),
+        )
+        .groupBy(scheduledEntries.competence, scheduledRules.categoryId, categories.name),
+    ]);
+
+  const actualByMonth = new Map(monthlyActual.map((row) => [row.competence, row]));
+  const pendingByMonth = new Map(pendingRows.map((row) => [row.competence, row]));
+  const categoryMap = new Map<string, { name: string; actualCents: number; plannedCents: number }>();
+  for (const row of categoryActual) {
+    const key = `${row.competence}:${row.name}`;
+    categoryMap.set(key, { name: row.name, actualCents: row.amountCents, plannedCents: 0 });
+  }
+  for (const row of categoryPlanned) {
+    const key = `${row.competence}:${row.name}`;
+    const current = categoryMap.get(key) ?? { name: row.name, actualCents: 0, plannedCents: 0 };
+    current.plannedCents += row.amountCents;
+    categoryMap.set(key, current);
+  }
+
+  let cashBalanceCents = 0;
+  let cardBalanceCents = 0;
+  for (const row of transactionFlows.filter((row) => row.competence < from)) {
+    if (row.walletType === "CASH_ACCOUNT") cashBalanceCents += row.amountCents;
+    else cardBalanceCents += row.amountCents;
+  }
+  const flowByMonth = new Map<string, typeof transactionFlows>();
+  for (const row of transactionFlows.filter((row) => row.competence >= from)) {
+    const list = flowByMonth.get(row.competence) ?? [];
+    list.push(row);
+    flowByMonth.set(row.competence, list);
+  }
+  const overdue = pendingRows
+    .filter((row) => row.competence < from)
+    .reduce(
+      (sum, row) => ({
+        incomeCents: sum.incomeCents + row.incomeCents,
+        expenseCents: sum.expenseCents + row.expenseCents,
+      }),
+      { incomeCents: 0, expenseCents: 0 },
+    );
+  let plannedIncomeAccumulatedCents = overdue.incomeCents;
+  let plannedExpenseAccumulatedCents = overdue.expenseCents;
+  const categoryTotals = Array.from(categoryMap.values())
+    .reduce((map, category) => {
+      const current = map.get(category.name) ?? { name: category.name, actualCents: 0, plannedCents: 0 };
+      current.actualCents += category.actualCents;
+      current.plannedCents += category.plannedCents;
+      map.set(category.name, current);
+      return map;
+    }, new Map<string, { name: string; actualCents: number; plannedCents: number }>())
+    .values();
+  const timeline = Array.from({ length: horizon }, (_, index) => {
+    const competence = addMonths(from, index);
+    for (const flow of flowByMonth.get(competence) ?? []) {
+      if (flow.walletType === "CASH_ACCOUNT") cashBalanceCents += flow.amountCents;
+      else cardBalanceCents += flow.amountCents;
+    }
+    const actual = actualByMonth.get(competence);
+    const planned = pendingByMonth.get(competence);
+    plannedIncomeAccumulatedCents += planned?.incomeCents ?? 0;
+    plannedExpenseAccumulatedCents += planned?.expenseCents ?? 0;
+    const cardDebtCents = Math.abs(Math.min(cardBalanceCents, 0));
+    return {
+      competence,
+      actualIncomeCents: actual?.incomeCents ?? 0,
+      actualExpenseCents: actual?.expenseCents ?? 0,
+      realBalanceCents: cashBalanceCents,
+      cardDebtCents,
+      plannedIncomeCents: planned?.incomeCents ?? 0,
+      plannedExpenseCents: planned?.expenseCents ?? 0,
+      overdueIncomeCents: index === 0 ? overdue.incomeCents : 0,
+      overdueExpenseCents: index === 0 ? overdue.expenseCents : 0,
+      plannedBalanceCents: calculateProjectedBalance(
+        cashBalanceCents,
+        plannedIncomeAccumulatedCents,
+        0,
+        plannedExpenseAccumulatedCents,
+        0,
+        cardDebtCents,
+      ),
+      categories: Array.from(categoryMap.entries())
+        .filter(([key]) => key.startsWith(`${competence}:`))
+        .map(([, value]) => value)
+        .sort((a, b) => b.actualCents + b.plannedCents - (a.actualCents + a.plannedCents))
+        .slice(0, 5),
+    };
+  });
+  return {
+    from,
+    to,
+    months: horizon,
+    timeline,
+    categoryTotals: Array.from(categoryTotals).sort(
+      (a, b) =>
+        b.actualCents + b.plannedCents - (a.actualCents + a.plannedCents),
+    ),
   };
 }
 
