@@ -33,6 +33,7 @@ type TransactionFilter = {
   page: number;
   pageSize: number;
   query?: string;
+  competence?: string;
   from?: string;
   to?: string;
   walletId?: string;
@@ -50,6 +51,8 @@ export async function getTransactionsPage(
   const conditions = [eq(transactions.userId, userId)];
   if (filter.query)
     conditions.push(ilike(transactions.description, `%${filter.query}%`));
+  if (filter.competence)
+    conditions.push(eq(transactions.competence, filter.competence));
   if (filter.from)
     conditions.push(gte(transactions.consumptionDate, filter.from));
   if (filter.to) conditions.push(lte(transactions.consumptionDate, filter.to));

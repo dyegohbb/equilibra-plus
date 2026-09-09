@@ -1,6 +1,7 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { LoadingState } from "@/components/ui/spinner";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { useNotifications } from "@/components/ui/notifications";
 import { parseMoneyToCents } from "@/modules/finance/domain";
 
@@ -130,10 +131,16 @@ async function post(payload: Record<string, unknown>) {
   });
 }
 
-export function AdvancedStatement({ wallets, categories, visible }: Options) {
+export function AdvancedStatement({
+  wallets,
+  categories,
+  competence,
+  visible,
+}: Options) {
   const notify = useNotifications(),
     [filters, setFilters] = useState({
       query: "",
+      competence: competence.slice(0, 7),
       from: "",
       to: "",
       walletId: "",
@@ -167,6 +174,8 @@ export function AdvancedStatement({ wallets, categories, visible }: Options) {
             key === "min" ? "minCents" : key === "max" ? "maxCents" : key,
             key === "min" || key === "max"
               ? String(parseMoneyToCents(value))
+              : key === "competence"
+                ? `${value}-01`
               : value,
           );
       });
@@ -221,11 +230,17 @@ export function AdvancedStatement({ wallets, categories, visible }: Options) {
             <p className="eyebrow">EXTRATO GLOBAL</p>
             <h2>{data?.total ?? 0} lançamentos</h2>
           </div>
-          <button className="small-button" onClick={() => void load()}>
-            Atualizar
-          </button>
+          <RefreshButton onRefresh={load} />
         </div>
         <div className="filter-grid">
+          <label className="compact-filter">
+            <span>Competência</span>
+            <input
+              type="month"
+              value={filters.competence}
+              onChange={(e) => update("competence", e.target.value)}
+            />
+          </label>
           <input
             placeholder="Buscar em todo histórico"
             value={filters.query}
@@ -737,6 +752,7 @@ export function RecurringManager({
             <p className="eyebrow">REGRAS MENSAIS</p>
             <h2>Recorrências ativas e encerradas</h2>
           </div>
+          <RefreshButton onRefresh={load} />
         </div>
         {busy ? (
           <LoadingState label="Carregando recorrências…" />
@@ -996,9 +1012,12 @@ export function ReportsPanel({ categories, competence, visible }: Options) {
             <p className="eyebrow">RELATÓRIOS</p>
             <h2>Evolução financeira</h2>
           </div>
-          <button className="small-button" onClick={exportCsv}>
-            Exportar CSV
-          </button>
+          <div className="heading-actions">
+            <RefreshButton onRefresh={load} />
+            <button className="small-button" onClick={exportCsv}>
+              Exportar CSV
+            </button>
+          </div>
         </div>
         <div className="report-filters">
           <input
@@ -1229,6 +1248,7 @@ export function GoalsPanel({ visible }: Options) {
           <p className="eyebrow">TOTAL RESERVADO</p>
           <strong>{cash(reserved, visible)}</strong>
         </div>
+        <RefreshButton onRefresh={load} />
       </section>
       <section className="panel">
         <h2>Nova meta</h2>
@@ -1320,9 +1340,13 @@ export function PendingPanel({ visible }: Options) {
   useEffect(() => {
     queueMicrotask(() => void load());
   }, [load]);
-  if (busy) return <LoadingState label="Revisando pendências…" />;
+  if (busy && !data) return <LoadingState label="Revisando pendências…" />;
   return (
-    <div className="pending-grid">
+    <div className="page-stack">
+      <div className="page-toolbar">
+        <RefreshButton onRefresh={load} />
+      </div>
+      <div className="pending-grid">
       <PendingGroup
         title="Programações atrasadas"
         count={data?.overdue.length ?? 0}
@@ -1378,6 +1402,7 @@ export function PendingPanel({ visible }: Options) {
           </div>
         ))}
       </PendingGroup>
+      </div>
     </div>
   );
 }

@@ -70,8 +70,7 @@ export async function getFinanceData(userId: string, competence: string) {
           isNull(transactions.deletedAt),
         ),
       )
-      .orderBy(desc(transactions.consumptionDate), desc(transactions.createdAt))
-      .limit(20),
+      .orderBy(desc(transactions.consumptionDate), desc(transactions.createdAt)),
     db
       .select({
         entry: scheduledEntries,

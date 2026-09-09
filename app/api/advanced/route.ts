@@ -41,6 +41,7 @@ export async function GET(request: Request) {
             Math.max(10, Number(url.searchParams.get("pageSize")) || 25),
           ),
           query: url.searchParams.get("query") || undefined,
+          competence: url.searchParams.get("competence") || undefined,
           from: url.searchParams.get("from") || undefined,
           to: url.searchParams.get("to") || undefined,
           walletId: url.searchParams.get("walletId") || undefined,

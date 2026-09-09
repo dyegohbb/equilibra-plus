@@ -11,6 +11,7 @@ import {
 import { Brand } from "@/components/ui/brand";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { LoadingState } from "@/components/ui/spinner";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { useNotifications } from "@/components/ui/notifications";
 import {
   addMonths,
@@ -177,8 +178,8 @@ export function FinanceApp({
       return next;
     });
   }
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const r = await fetch(`/api/finance?competence=${competence}`, {
           cache: "no-store",
@@ -190,7 +191,7 @@ export function FinanceApp({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar.");
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [competence]);
   useEffect(() => {
@@ -281,6 +282,17 @@ export function FinanceApp({
           {loading && <div className="panel">Organizando seus números…</div>}
           {data && !loading && (
             <>
+              {[
+                "dashboard",
+                "new",
+                "wallets",
+                "scheduled",
+                "cards",
+              ].includes(tab) && (
+                <div className="page-toolbar">
+                  <RefreshButton onRefresh={() => load(true)} />
+                </div>
+              )}
               {tab === "dashboard" && <Dashboard data={data} setTab={setTab} />}{" "}
               {tab === "new" && (
                 <New
